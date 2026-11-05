@@ -1,0 +1,220 @@
+# Copyright (C) 2026 Michel L'Hostis <michel.lhostis@iseffi.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+#
+# Module
+#
+ModuleMarkAutoMecanikName = Webmecanik marketing automation
+ModuleMarkAutoMecanikDesc = Importe les contacts qualifiés de Webmecanik Automation en leads marketing
+MarkAutoMecanikMenu = Leads marketing
+MarkAutoMecanikSetup = Configuration Webmecanik marketing automation
+MarkAutoMecanikSetupPage = Connectez Dolibarr à votre instance Webmecanik Automation. Les contacts atteignant le seuil de points (et, en option, appartenant à un segment) sont importés en leads marketing.
+Permission50003001 = Lire les leads marketing affectés à l'utilisateur ou créés par lui
+Permission50003002 = Lire tous les leads marketing (y compris non affectés)
+Permission50003003 = Créer et qualifier les leads marketing (statut, affectation, liens)
+Permission50003004 = Supprimer et anonymiser les leads marketing
+Permission50003005 = Lancer manuellement la synchronisation Webmecanik
+
+#
+# Lead
+#
+MarketingLead = Lead marketing
+MarketingLeads = Leads marketing
+NewLead = Nouveau lead
+LeadsToProcess = Leads à traiter
+MyLeads = Mes leads
+LeadOrigin = Origine
+OriginWebmecanik = Webmecanik
+OriginManual = Saisie manuelle
+OriginApi = API REST
+LeadStatusNew = À traiter
+LeadStatusAssigned = Affecté
+LeadStatusInvalid = Non valide
+LeadStatusArchived = Archivé
+LeadStatusConverted = Converti
+LeadStatusLost = Perdu
+WebmecanikContactId = Identifiant contact Webmecanik
+WebmecanikContact = Contact Webmecanik
+WebmecanikDateAdded = Créé dans Webmecanik
+WebmecanikDateModified = Dernière activité Webmecanik
+WebmecanikPoints = Points
+OpenInWebmecanik = Ouvrir dans Webmecanik
+Industry = Secteur d'activité
+Message = Message
+Website = Site web
+SyncOk = OK
+Interests = Centres d'intérêt
+UtmSource = Source UTM
+UtmMedium = Medium UTM
+UtmCampaign = Campagne UTM
+UtmTags = Tags UTM
+DateStatus = Date du statut
+LostReason = Motif de perte
+LostReasonPlaceholder = Obligatoire pour le statut « Perdu »
+SalesRepresentative = Commercial
+Qualification = Qualification
+NotifyByEmail = Prévenir par email
+NotifySalesRep = Prévenir le commercial
+ConfirmNotifySalesRep = Envoyer au commercial affecté un email contenant le lien vers ce lead ?
+NotifySubject = Nouveau lead marketing n°%s qui vous est affecté
+NotifyBody = %s vous a affecté un lead marketing. Merci de le qualifier dans Dolibarr.
+EventLeadAssigned = Lead marketing n°%s affecté à %s
+CreateThirdParty = Créer le tiers
+CreateOpportunity = Créer une opportunité
+OpportunityFromLead = Opportunité - %s
+AddContact = Créer le contact
+LinkToThirdparty = Lier au tiers
+ConfirmLinkToThirdparty = Lier ce lead au tiers <b>%s</b> ?
+LinkToProject = Lier au projet
+ConfirmLinkToProject = Lier ce lead au projet <b>%s</b> et le marquer comme converti ?
+LeadLinkedToThirdparty = Lead lié au tiers
+Unlink = Délier
+PushStatusTag = Envoyer le statut à Webmecanik
+TagPushed = Statut envoyé à Webmecanik
+WarningTagNotPushed = Le statut n'a pas pu être envoyé à Webmecanik.
+AnonymizeLead = Anonymiser (RGPD)
+ConfirmAnonymizeLead = Les données personnelles de ce lead (nom, email, téléphone, ville, message, notes) seront définitivement effacées. Pensez à supprimer aussi le contact dans Webmecanik, sinon il pourra être réimporté à sa prochaine activité. Continuer ?
+LeadAnonymized = Lead anonymisé
+LeadAnonymizedOn = Lead anonymisé le %s (RGPD) : ses données personnelles ont été effacées.
+LeadIsAnonymized = Ce lead est anonymisé et ne peut plus être modifié
+DeleteLead = Supprimer le lead
+ConfirmDeleteLead = Voulez-vous vraiment supprimer ce lead ?
+AssignToMe = M'affecter
+AssignedToMe = Affectés à moi
+NotAssigned = Non affecté
+SetInvalid = Passer en non valide
+Archive = Archiver
+Late = En retard
+RecordsModified = %s enregistrement(s) modifié(s)
+ErrorLostReasonRequired = Le motif de perte est obligatoire pour un lead perdu
+ErrorLastnameOrCompanyRequired = Le nom ou la société est obligatoire
+ErrorBadStatus = Statut invalide
+ErrorBadSalesRepresentative = Commercial invalide (inconnu, désactivé ou utilisateur externe)
+ErrorNoSalesRepEmail = Aucun commercial avec une adresse email valide
+ErrorBadUrl = URL invalide : %s
+
+#
+# Synchronisation
+#
+SynchronizeNow = Synchroniser maintenant
+LastSuccessfulSync = Dernière synchronisation réussie
+Never = jamais
+SyncSummary = %s contact(s) reçu(s), %s créé(s), %s mis à jour, %s ignoré(s), %s erreur(s)
+SyncWindowSince = modifiés depuis le %s
+ErrorSyncAlreadyRunning = Une synchronisation est déjà en cours, réessayez dans quelques minutes
+SyncHistory = Historique des synchronisations
+Trigger = Déclencheur
+Received = Reçus
+Created = Créés
+Updated = Mis à jour
+Skipped = Ignorés
+Errors = Erreurs
+DateStart = Début
+Duration = Durée
+PurgeSyncLog = Supprimer l'historique de plus de 3 mois
+SyncLogPurged = Historique purgé
+
+#
+# Relances et RGPD
+#
+RemindersDisabled = Relances désactivées (délai de traitement non configuré)
+RemindersSent = %s email(s) de relance envoyé(s), %s lead(s) non affecté(s) en retard
+ReminderSubjectAssigned = %s lead(s) marketing en attente
+ReminderBodyAssigned = Bonjour,\n\nLes leads marketing suivants vous sont affectés et n'ont pas évolué depuis plus de %s jour(s) :
+ReminderSubjectNew = %s lead(s) marketing à traiter
+ReminderBodyNew = Bonjour,\n\nLes leads marketing suivants sont en attente de traitement depuis plus de %s jour(s) :
+PurgeDisabled = Purge RGPD désactivée (durée de conservation non configurée)
+PurgeDone = %s lead(s) anonymisé(s) (conservation : %s mois)
+
+#
+# Configuration
+#
+WebmecanikConnection = Connexion à Webmecanik Automation
+WebmecanikUrl = URL de l'instance
+WebmecanikUrlHelp = URL de base de votre instance, en https uniquement (ex. https://masociete.webmecanik.com).
+AuthenticationMode = Authentification
+AuthenticationModeHelp = OAuth2 « client credentials » est recommandé. L'authentification basique doit être activée dans les paramètres API de Webmecanik.
+AuthOAuth2 = OAuth2 (client credentials)
+AuthBasic = Authentification HTTP basique
+OAuth2ClientId = Client ID OAuth2
+OAuth2ClientSecret = Client secret OAuth2
+BasicUser = Identifiant de l'utilisateur API
+BasicPassword = Mot de passe de l'utilisateur API
+SecretStoredLeaveEmpty = enregistré (chiffré) - laisser vide pour le conserver
+ClearValue = effacer
+ImportRules = Règles d'import
+MinPoints = Points minimum
+MinPointsHelp = Seuls les contacts ayant au moins ce nombre de points sont importés.
+SegmentAlias = Alias du segment (optionnel)
+SegmentAliasHelp = Si renseigné, seuls les contacts de ce segment Webmecanik sont importés.
+FieldMessage = Alias du champ personnalisé : message
+FieldInterests = Alias du champ personnalisé : centres d'intérêt
+FieldIndustry = Alias du champ personnalisé : secteur d'activité
+FieldAliasHelp = Alias de vos champs personnalisés Webmecanik (laisser vide si non utilisé).
+MaxWindowDays = Fenêtre maximale de synchronisation (jours)
+MaxWindowDaysHelp = Après une longue interruption, seuls les contacts modifiés pendant ce nombre de jours sont rattrapés.
+RemindersAndGdpr = Relances et RGPD
+SlaDays = Délai de traitement (jours)
+SlaDaysHelp = 0 = désactivé. Au-delà de ce délai, les leads sont signalés en retard et la tâche planifiée envoie des relances.
+AlertEmail = Email d'alerte des leads non affectés
+AlertEmailHelp = Reçoit chaque jour la liste des leads non affectés en retard (vide = désactivé).
+RemindMaxAgeMonths = Horizon des relances (mois)
+RemindMaxAgeMonthsHelp = Les leads créés avant cet horizon sont ignorés par les relances.
+RetentionMonths = Conservation des leads non convertis (mois)
+RetentionMonthsHelp = 0 = illimitée. Au-delà de cette durée sans activité, la tâche RGPD anonymise les leads non convertis.
+ClosedLoop = Boucle fermée avec Webmecanik
+PushTags = Envoyer le statut du lead sous forme de tag
+PushTagsHelp = À chaque changement de statut, le contact est tagué dans Webmecanik (ex. dolibarr-converted) pour construire segments et campagnes.
+TagPrefix = Préfixe des tags
+Webhook = Import en temps réel (webhook)
+WebhookEnabled = Activer le webhook
+WebhookEnabledHelp = Optionnel. La tâche planifiée reste la référence ; le webhook accélère seulement l'import.
+WebhookUrl = URL à déclarer dans Webmecanik
+WebhookUrlHelp = Dans Webmecanik : Paramètres > Webhooks > Nouveau, événements « Contact mis à jour » et « Points du contact modifiés ».
+WebhookSecret = Secret du webhook
+WebhookSecretHelp = Copiez ici le secret affiché par Webmecanik pour ce webhook. Chaque appel est vérifié par une signature HMAC-SHA256.
+WebhookUser = Auteur des leads créés par le webhook
+WebhookUserHelp = Utilisateur technique enregistré comme créateur des leads importés par le webhook.
+ErrorWebmecanikUrlMustBeHttps = L'URL de l'instance doit être une URL https valide, sans identifiants, paramètres ni fragment
+ErrorSecretTooLong = Secret trop long
+ErrorBadAlias = Alias invalide : %s (lettres, chiffres, « - » et « _ » uniquement)
+ErrorBadTagPrefix = Préfixe de tag invalide (lettres, chiffres, « . », « - » et « _ » uniquement)
+ErrorWebhookSecretRequired = Un secret est obligatoire pour activer le webhook
+ErrorCurlMissing = L'extension PHP cURL est requise par ce module.
+SyncTools = Outils
+TestConnection = Tester la connexion
+ConnectionOk = Connexion OK : %s contact(s) visible(s) par l'utilisateur API
+ConnectionFailed = Échec de la connexion
+SyncLastDays = Fenêtre (jours, 0 = depuis la dernière exécution)
+SyncLastDaysHelp = Utilisez une fenêtre en jours pour un import initial ou un rattrapage.
+ResetSyncWindow = Réinitialiser l'état de synchronisation
+ResetSyncWindowHelp = Oublie la date de dernière synchronisation et libère un verrou bloqué.
+SyncWindowReset = État de synchronisation réinitialisé
+ScheduledJobs = Tâches planifiées
+ScheduledJobsHelp = Activez les tâches « Webmecanik - ... » (synchronisation, relances, purge RGPD) une fois la connexion opérationnelle.
+
+#
+# Statistiques et widget
+#
+LeadStatistics = Statistiques des leads marketing
+StatsRestrictedToYourLeads = Les statistiques sont limitées à vos leads.
+NumberOfLeads = Nombre de leads
+NumberOfLeadsByMonth = Nombre de leads par mois (hors non valides et archivés)
+LeadsByMonthAndStatus = Leads par mois et par statut - %s
+LeadsBySalesRepresentative = Leads par commercial - %s
+ConversionRate = Taux de conversion
+LeadDashboardBox = Leads marketing
+LeadLate = Leads en retard (> %s jours)
+LeadConversionRate12Months = Taux de conversion (12 mois)

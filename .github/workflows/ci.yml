@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: PHP ${{ matrix.php }} lint
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['7.4', '8.0', '8.1', '8.2', '8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          tools: none
+      - name: Syntax check
+        run: find . -name "*.php" -print0 | xargs -0 -n1 -P4 php -l
+
+  tests:
+    name: Unit tests (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['7.4', '8.3']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: openssl, mbstring, curl
+          tools: none
+      - name: Fetch Dolibarr 19 sources
+        run: git clone --depth 1 --branch 19.0 https://github.com/Dolibarr/dolibarr.git "$RUNNER_TEMP/dolibarr"
+      - name: Run unit tests
+        run: DOLIBARR_ROOT="$RUNNER_TEMP/dolibarr/htdocs" php test/unit_test.php
+
+  hygiene:
+    name: Repository hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: No debug output left in code
+        run: |
+          ! grep -rnE "\b(var_dump|print_r|var_export)\s*\(" --include=*.php . | grep -v "^./test/"
+      - name: Translation files have the same keys
+        run: |
+          diff <(grep -oE '^[A-Za-z0-9_]+' langs/en_US/markautomecanik.lang | sort -u) \
+               <(grep -oE '^[A-Za-z0-9_]+' langs/fr_FR/markautomecanik.lang | sort -u)

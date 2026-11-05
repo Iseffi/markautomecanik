@@ -1,0 +1,16 @@
+# Build output
+/build/*.zip
+/dist/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Local files that must never be committed
+*.log
+*.bak
+.env
+conf.php

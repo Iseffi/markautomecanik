@@ -1,0 +1,220 @@
+# Copyright (C) 2026 Michel L'Hostis <michel.lhostis@iseffi.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+#
+# Module
+#
+ModuleMarkAutoMecanikName = Webmecanik marketing automation
+ModuleMarkAutoMecanikDesc = Import qualified Webmecanik Automation contacts as marketing leads
+MarkAutoMecanikMenu = Marketing leads
+MarkAutoMecanikSetup = Webmecanik marketing automation setup
+MarkAutoMecanikSetupPage = Connect Dolibarr to your Webmecanik Automation instance. Contacts reaching the points threshold (and, optionally, belonging to a segment) are imported as marketing leads.
+Permission50003001 = Read marketing leads assigned to or created by the user
+Permission50003002 = Read all marketing leads (including unassigned leads)
+Permission50003003 = Create and qualify marketing leads (status, assignment, links)
+Permission50003004 = Delete and anonymise marketing leads
+Permission50003005 = Run the Webmecanik synchronisation manually
+
+#
+# Lead
+#
+MarketingLead = Marketing lead
+MarketingLeads = Marketing leads
+NewLead = New lead
+LeadsToProcess = Leads to process
+MyLeads = My leads
+LeadOrigin = Origin
+OriginWebmecanik = Webmecanik
+OriginManual = Manual
+OriginApi = REST API
+LeadStatusNew = To process
+LeadStatusAssigned = Assigned
+LeadStatusInvalid = Invalid
+LeadStatusArchived = Archived
+LeadStatusConverted = Converted
+LeadStatusLost = Lost
+WebmecanikContactId = Webmecanik contact id
+WebmecanikContact = Webmecanik contact
+WebmecanikDateAdded = Created in Webmecanik
+WebmecanikDateModified = Last Webmecanik activity
+WebmecanikPoints = Points
+OpenInWebmecanik = Open in Webmecanik
+Industry = Industry
+Message = Message
+Website = Website
+SyncOk = OK
+Interests = Interests
+UtmSource = UTM source
+UtmMedium = UTM medium
+UtmCampaign = UTM campaign
+UtmTags = UTM tags
+DateStatus = Status date
+LostReason = Lost reason
+LostReasonPlaceholder = Required when the status is "Lost"
+SalesRepresentative = Sales representative
+Qualification = Qualification
+NotifyByEmail = Notify by email
+NotifySalesRep = Notify sales representative
+ConfirmNotifySalesRep = Send an email to the assigned sales representative with a link to this lead?
+NotifySubject = New marketing lead #%s assigned to you
+NotifyBody = %s has assigned a marketing lead to you. Please qualify it in Dolibarr.
+EventLeadAssigned = Marketing lead #%s assigned to %s
+CreateThirdParty = Create third party
+CreateOpportunity = Create opportunity
+OpportunityFromLead = Opportunity - %s
+AddContact = Create contact
+LinkToThirdparty = Link to third party
+ConfirmLinkToThirdparty = Link this lead to the third party <b>%s</b>?
+LinkToProject = Link to project
+ConfirmLinkToProject = Link this lead to project <b>%s</b> and mark it as converted?
+LeadLinkedToThirdparty = Lead linked to the third party
+Unlink = Unlink
+PushStatusTag = Push status to Webmecanik
+TagPushed = Status pushed to Webmecanik
+WarningTagNotPushed = The status could not be pushed to Webmecanik.
+AnonymizeLead = Anonymise (GDPR)
+ConfirmAnonymizeLead = Personal data of this lead (name, email, phone, town, message, notes) will be permanently erased. Remember to also delete the contact in Webmecanik, otherwise it may be imported again on its next activity. Continue?
+LeadAnonymized = Lead anonymised
+LeadAnonymizedOn = Lead anonymised on %s (GDPR): its personal data have been erased.
+LeadIsAnonymized = This lead is anonymised and can no longer be modified
+DeleteLead = Delete lead
+ConfirmDeleteLead = Are you sure you want to delete this lead?
+AssignToMe = Assign to me
+AssignedToMe = Assigned to me
+NotAssigned = Not assigned
+SetInvalid = Set as invalid
+Archive = Archive
+Late = Late
+RecordsModified = %s record(s) modified
+ErrorLostReasonRequired = The lost reason is required for a lost lead
+ErrorLastnameOrCompanyRequired = Lastname or company is required
+ErrorBadStatus = Invalid status
+ErrorBadSalesRepresentative = Invalid sales representative (unknown, disabled or external user)
+ErrorNoSalesRepEmail = No sales representative with a valid email address
+ErrorBadUrl = Invalid URL: %s
+
+#
+# Synchronisation
+#
+SynchronizeNow = Synchronise now
+LastSuccessfulSync = Last successful synchronisation
+Never = never
+SyncSummary = %s contact(s) received, %s created, %s updated, %s skipped, %s error(s)
+SyncWindowSince = modified since %s
+ErrorSyncAlreadyRunning = A synchronisation is already running, please retry in a few minutes
+SyncHistory = Synchronisation history
+Trigger = Trigger
+Received = Received
+Created = Created
+Updated = Updated
+Skipped = Skipped
+Errors = Errors
+DateStart = Start
+Duration = Duration
+PurgeSyncLog = Delete history older than 3 months
+SyncLogPurged = History purged
+
+#
+# Reminders and GDPR
+#
+RemindersDisabled = Reminders disabled (processing delay not configured)
+RemindersSent = %s reminder email(s) sent, %s unassigned lead(s) late
+ReminderSubjectAssigned = %s marketing lead(s) waiting for you
+ReminderBodyAssigned = Hello,\n\nThe following marketing leads are assigned to you and have not changed for more than %s day(s):
+ReminderSubjectNew = %s marketing lead(s) to process
+ReminderBodyNew = Hello,\n\nThe following marketing leads have been waiting to be processed for more than %s day(s):
+PurgeDisabled = GDPR purge disabled (retention period not configured)
+PurgeDone = %s lead(s) anonymised (retention: %s months)
+
+#
+# Setup
+#
+WebmecanikConnection = Webmecanik Automation connection
+WebmecanikUrl = Instance URL
+WebmecanikUrlHelp = Base URL of your instance, https only (e.g. https://mycompany.webmecanik.com).
+AuthenticationMode = Authentication
+AuthenticationModeHelp = OAuth2 client credentials is recommended. Basic authentication must be enabled in the API settings of Webmecanik.
+AuthOAuth2 = OAuth2 (client credentials)
+AuthBasic = HTTP basic authentication
+OAuth2ClientId = OAuth2 client id
+OAuth2ClientSecret = OAuth2 client secret
+BasicUser = API user login
+BasicPassword = API user password
+SecretStoredLeaveEmpty = stored (encrypted) - leave empty to keep it
+ClearValue = clear
+ImportRules = Import rules
+MinPoints = Minimum points
+MinPointsHelp = Only contacts with at least this number of points are imported.
+SegmentAlias = Segment alias (optional)
+SegmentAliasHelp = If set, only contacts of this Webmecanik segment are imported.
+FieldMessage = Custom field alias: message
+FieldInterests = Custom field alias: interests
+FieldIndustry = Custom field alias: industry
+FieldAliasHelp = Aliases of your Webmecanik custom fields (leave empty if not used).
+MaxWindowDays = Maximum synchronisation window (days)
+MaxWindowDaysHelp = After a long interruption, only contacts modified during this number of days are caught up.
+RemindersAndGdpr = Reminders and GDPR
+SlaDays = Processing delay (days)
+SlaDaysHelp = 0 = disabled. Beyond this delay, leads are flagged late and reminders are sent by the scheduled job.
+AlertEmail = Alert email for unassigned leads
+AlertEmailHelp = Receives the daily list of late unassigned leads (empty = disabled).
+RemindMaxAgeMonths = Reminder horizon (months)
+RemindMaxAgeMonthsHelp = Leads created before this horizon are ignored by reminders.
+RetentionMonths = Retention of unconverted leads (months)
+RetentionMonthsHelp = 0 = unlimited. Beyond this period without activity, the GDPR scheduled job anonymises unconverted leads.
+ClosedLoop = Closed loop with Webmecanik
+PushTags = Push lead status as a tag
+PushTagsHelp = When the status changes, the contact is tagged in Webmecanik (e.g. dolibarr-converted) so you can build segments and campaigns.
+TagPrefix = Tag prefix
+Webhook = Real-time import (webhook)
+WebhookEnabled = Enable webhook
+WebhookEnabledHelp = Optional. The scheduled job remains the reference; the webhook only speeds up the import.
+WebhookUrl = URL to declare in Webmecanik
+WebhookUrlHelp = In Webmecanik: Settings > Webhooks > New, events "Contact updated" and "Contact points changed".
+WebhookSecret = Webhook secret
+WebhookSecretHelp = Copy here the secret displayed by Webmecanik for this webhook. Every call is verified with an HMAC-SHA256 signature.
+WebhookUser = Author of the leads created by the webhook
+WebhookUserHelp = Technical user recorded as creator of the leads imported by the webhook.
+ErrorWebmecanikUrlMustBeHttps = The instance URL must be a valid https URL without credentials, parameters or fragment
+ErrorSecretTooLong = Secret too long
+ErrorBadAlias = Invalid alias: %s (letters, digits, "-" and "_" only)
+ErrorBadTagPrefix = Invalid tag prefix (letters, digits, ".", "-" and "_" only)
+ErrorWebhookSecretRequired = A webhook secret is required to enable the webhook
+ErrorCurlMissing = The PHP cURL extension is required by this module.
+SyncTools = Tools
+TestConnection = Test connection
+ConnectionOk = Connection OK: %s contact(s) visible by the API user
+ConnectionFailed = Connection failed
+SyncLastDays = Window (days, 0 = since last run)
+SyncLastDaysHelp = Use a window in days for an initial import or to catch up.
+ResetSyncWindow = Reset synchronisation state
+ResetSyncWindowHelp = Forgets the date of the last synchronisation and releases a stuck lock.
+SyncWindowReset = Synchronisation state reset
+ScheduledJobs = Scheduled jobs
+ScheduledJobsHelp = Enable the jobs "Webmecanik - ..." (synchronisation, reminders, GDPR purge) once the connection works.
+
+#
+# Statistics and widget
+#
+LeadStatistics = Marketing leads statistics
+StatsRestrictedToYourLeads = Statistics are restricted to your leads.
+NumberOfLeads = Number of leads
+NumberOfLeadsByMonth = Number of leads by month (invalid and archived excluded)
+LeadsByMonthAndStatus = Leads by month and status - %s
+LeadsBySalesRepresentative = Leads by sales representative - %s
+ConversionRate = Conversion rate
+LeadDashboardBox = Marketing leads
+LeadLate = Late leads (> %s days)
+LeadConversionRate12Months = Conversion rate (12 months)
