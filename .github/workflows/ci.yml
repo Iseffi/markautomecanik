@@ -17,7 +17,7 @@ jobs:
       matrix:
         php: ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5']
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
@@ -40,7 +40,7 @@ jobs:
           - { dolibarr: '24.0', php: '8.4' }
           - { dolibarr: '24.0', php: '8.5' }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
@@ -55,7 +55,7 @@ jobs:
     name: Repository hygiene
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: No debug output left in code
         run: |
           ! grep -rnE "\b(var_dump|print_r|var_export)\s*\(" --include=*.php . | grep -v "^./test/"
