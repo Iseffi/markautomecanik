@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        php: ['7.4', '8.0', '8.1', '8.2', '8.3']
+        php: ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4', '8.5']
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -26,12 +26,19 @@ jobs:
         run: find . -name "*.php" -print0 | xargs -0 -n1 -P4 php -l
 
   tests:
-    name: Unit tests (PHP ${{ matrix.php }})
+    name: Unit tests (Dolibarr ${{ matrix.dolibarr }}, PHP ${{ matrix.php }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        php: ['7.4', '8.3']
+        include:
+          - { dolibarr: '19.0', php: '7.4' }
+          - { dolibarr: '19.0', php: '8.4' }
+          - { dolibarr: '21.0', php: '8.4' }
+          - { dolibarr: '22.0', php: '8.4' }
+          - { dolibarr: '23.0', php: '8.4' }
+          - { dolibarr: '24.0', php: '8.4' }
+          - { dolibarr: '24.0', php: '8.5' }
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -39,8 +46,8 @@ jobs:
           php-version: ${{ matrix.php }}
           extensions: openssl, mbstring, curl
           tools: none
-      - name: Fetch Dolibarr 19 sources
-        run: git clone --depth 1 --branch 19.0 https://github.com/Dolibarr/dolibarr.git "$RUNNER_TEMP/dolibarr"
+      - name: Fetch Dolibarr ${{ matrix.dolibarr }} sources
+        run: git clone --depth 1 --branch ${{ matrix.dolibarr }} https://github.com/Dolibarr/dolibarr.git "$RUNNER_TEMP/dolibarr"
       - name: Run unit tests
         run: DOLIBARR_ROOT="$RUNNER_TEMP/dolibarr/htdocs" php test/unit_test.php
 

@@ -36,8 +36,8 @@ pour boucler la boucle marketing / ventes.
 
 | Composant | Version |
 |-----------|---------|
-| Dolibarr  | 19.0 ou supérieure |
-| PHP       | 7.4 à 8.3, extensions `curl`, `json` et `openssl` |
+| Dolibarr  | 19.0 ou supérieure (testé avec 19, 21, 22, 23 et 24) |
+| PHP       | 7.4 ou supérieure (testé jusqu'à 8.5), extensions `curl`, `json` et `openssl` |
 | Base de données | MySQL / MariaDB |
 | Webmecanik Automation | API activée (Paramètres > Configuration > Paramètres de l'API) |
 

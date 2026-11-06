@@ -53,7 +53,7 @@ class modMarkAutoMecanik extends DolibarrModules
 		$this->descriptionlong = 'Imports qualified contacts (points threshold, optional segment) from Webmecanik Automation as marketing leads, with qualification workflow, sales assignment, reminders and GDPR retention.';
 		$this->editor_name = 'Iseffi';
 		$this->editor_url = 'https://github.com/iseffi/markautomecanik';
-		$this->version = '1.0.0';
+		$this->version = '1.0.1';
 		$this->url_last_version = '';
 		$this->const_name = 'MAIN_MODULE_'.strtoupper($this->name);
 		$this->picto = 'fa-bullhorn';

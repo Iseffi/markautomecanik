@@ -17,6 +17,10 @@ $conf->global->MARKAUTOMECANIK_FIELD_MESSAGE = 'message';
 $conf->global->MARKAUTOMECANIK_FIELD_INDUSTRY = 'industry';
 require DOL_DOCUMENT_ROOT.'/core/lib/functions.lib.php';
 require DOL_DOCUMENT_ROOT.'/core/lib/security.lib.php';
+// Dolibarr 24+: dolEncrypt()/dolDecrypt() moved to blockedlog/lib/securitycore.lib.php (loaded by filefunc.inc.php)
+if (!function_exists('dolEncrypt') && is_file(DOL_DOCUMENT_ROOT.'/blockedlog/lib/securitycore.lib.php')) {
+	require DOL_DOCUMENT_ROOT.'/blockedlog/lib/securitycore.lib.php';
+}
 $M = dirname(__DIR__);
 // Avoid loading CommonObject chain: stub minimal classes
 class CommonObject {} class DoliDB {}

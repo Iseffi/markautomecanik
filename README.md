@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/iseffi/markautomecanik/actions/workflows/ci.yml/badge.svg)](https://github.com/iseffi/markautomecanik/actions/workflows/ci.yml)
 ![Dolibarr](https://img.shields.io/badge/Dolibarr-19%2B-blue)
-![PHP](https://img.shields.io/badge/PHP-7.4%20%E2%80%93%208.3-777bb4)
+![PHP](https://img.shields.io/badge/PHP-7.4%20%E2%80%93%208.5-777bb4)
 ![License](https://img.shields.io/badge/license-GPLv3-green)
 
 *[Version française](README-fr.md)*
@@ -42,8 +42,8 @@ Webmecanik as a tag to close the loop between marketing and sales.
 
 | Component | Version |
 |-----------|---------|
-| Dolibarr  | 19.0 or later |
-| PHP       | 7.4 to 8.3, with the `curl`, `json` and `openssl` extensions |
+| Dolibarr  | 19.0 or later (tested with 19, 21, 22, 23 and 24) |
+| PHP       | 7.4 or higher (tested up to 8.5), with the `curl`, `json` and `openssl` extensions |
 | Database  | MySQL / MariaDB (PostgreSQL should work but is not tested) |
 | Webmecanik Automation | API enabled (Settings > Configuration > API settings) |
 

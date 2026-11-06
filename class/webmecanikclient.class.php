@@ -243,7 +243,11 @@ class MarkAutoMecanikWebmecanikClient
 		$errmsg = curl_error($ch);
 		$code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
 		$time = (float) curl_getinfo($ch, CURLINFO_TOTAL_TIME);
-		curl_close($ch);
+		if (PHP_VERSION_ID < 80000) {
+			// No-op since PHP 8.0 (CurlHandle is freed automatically) and deprecated since PHP 8.5
+			curl_close($ch);
+		}
+		unset($ch);
 
 		$this->lastHttpCode = $code;
 		$path = (string) parse_url($url, PHP_URL_PATH);
