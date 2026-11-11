@@ -53,7 +53,7 @@ class modMarkAutoMecanik extends DolibarrModules
 		$this->descriptionlong = 'Imports qualified contacts (points threshold, optional segment) from Webmecanik Automation as marketing leads, with qualification workflow, sales assignment, reminders and GDPR retention.';
 		$this->editor_name = 'Iseffi';
 		$this->editor_url = 'https://github.com/iseffi/markautomecanik';
-		$this->version = '1.0.1';
+		$this->version = '1.1.0';
 		$this->url_last_version = '';
 		$this->const_name = 'MAIN_MODULE_'.strtoupper($this->name);
 		$this->picto = 'fa-bullhorn';
@@ -296,16 +296,21 @@ class modMarkAutoMecanik extends DolibarrModules
 		}
 
 		// Remove permissions of a previous activation before re-adding them
-		$this->remove($options);
+		// (_remove() and not remove(): the secrets must not be deleted at activation)
+		$this->_remove(array(), $options);
 
-		$sql = array();
+		$sql = array(
+			// 1.1.0: leads imported from Webmecanik have no author (visibility through "created by me")
+			"UPDATE ".MAIN_DB_PREFIX."markautomecanik_lead SET fk_user_creat = NULL WHERE origin = 'webmecanik' AND fk_user_creat IS NOT NULL",
+		);
 
 		return $this->_init($sql, $options);
 	}
 
 	/**
 	 * Function called when module is disabled.
-	 * Remove from database constants, boxes and permissions from Dolibarr database.
+	 * Remove from database constants, boxes and permissions from Dolibarr database, and the
+	 * Webmecanik credentials and webhook secret of the current entity.
 	 * Data directories and tables are not deleted.
 	 *
 	 * @param string $options Options when enabling module ('', 'noboxes')
@@ -313,6 +318,13 @@ class modMarkAutoMecanik extends DolibarrModules
 	 */
 	public function remove($options = '')
 	{
+		global $conf;
+		require_once DOL_DOCUMENT_ROOT.'/core/lib/admin.lib.php';
+		foreach (array('MARKAUTOMECANIK_WM_CLIENT_SECRET', 'MARKAUTOMECANIK_WM_BASIC_PASSWORD', 'MARKAUTOMECANIK_WEBHOOK_SECRET') as $secretName) {
+			dolibarr_del_const($this->db, $secretName, $conf->entity);
+		}
+		dolibarr_set_const($this->db, 'MARKAUTOMECANIK_WEBHOOK_ENABLED', '0', 'chaine', 0, '', $conf->entity);
+
 		$sql = array();
 		return $this->_remove($sql, $options);
 	}

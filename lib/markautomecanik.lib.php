@@ -105,3 +105,44 @@ function markautomecanikRequirePost()
 		accessforbidden('This action requires a POST request');
 	}
 }
+
+/**
+ * HTML of an email address with a mailto link. Built here instead of using dol_print_email(),
+ * which inserts its argument without escaping when it adds a link.
+ *
+ * @param string $email Email
+ * @return string HTML, escaped
+ */
+function markautomecanikEmailHtml($email)
+{
+	$email = (string) $email;
+	if ($email === '') {
+		return '';
+	}
+	$label = dol_escape_htmltag($email);
+	if (!MarkAutoMecanikLead::isSafeEmail($email)) {
+		return $label;
+	}
+	return '<a href="mailto:'.dol_escape_htmltag($email).'">'.img_picto('', 'email', 'class="pictofixedwidth"').$label.'</a>';
+}
+
+/**
+ * HTML of a phone number with a tel: link. Built here instead of using dol_print_phone(),
+ * which returns its argument without escaping.
+ *
+ * @param string $phone Phone number
+ * @return string HTML, escaped
+ */
+function markautomecanikPhoneHtml($phone)
+{
+	$phone = (string) $phone;
+	if ($phone === '') {
+		return '';
+	}
+	$label = dol_escape_htmltag($phone);
+	$dial = (string) preg_replace('/[^0-9+]/', '', $phone);
+	if ($dial === '') {
+		return $label;
+	}
+	return '<a href="tel:'.dol_escape_htmltag($dial).'">'.img_picto('', 'phoning', 'class="pictofixedwidth"').$label.'</a>';
+}

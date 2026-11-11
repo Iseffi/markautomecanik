@@ -97,6 +97,13 @@ class MarkAutoMecanikLead extends CommonObject
 		'utm_campaign' => 255, 'lost_reason' => 255, 'note_private' => 10000,
 	);
 
+	/** @var string[] Text fields allowed to contain line feeds (all the others are single-line) */
+	const MULTILINE_FIELDS = array('interests', 'message', 'note_private');
+
+	/** Opt-out hash types */
+	const OPTOUT_EMAIL = 'email';
+	const OPTOUT_WMID = 'wmid';
+
 	/**
 	 * @var array Fields definition (see CommonObject)
 	 */
@@ -193,14 +200,16 @@ class MarkAutoMecanikLead extends CommonObject
 	// -------------------------------------------------------------------------------------------
 
 	/**
-	 * Clean a free text value coming from an external source: removes control characters
-	 * (except new lines and tabulations), trims and truncates. Output must still be escaped.
+	 * Clean a free text value coming from an external source: removes control characters, trims
+	 * and truncates. A single-line value also loses its line feeds and tabulations (they could
+	 * forge lines in the plain text emails) and its HTML tags. Output must still be escaped.
 	 *
 	 * @param mixed $value     Raw value
 	 * @param int   $maxlength Maximum length in characters
+	 * @param bool  $multiline true to keep line feeds and tabulations
 	 * @return string
 	 */
-	public static function cleanText($value, $maxlength = 255)
+	public static function cleanText($value, $maxlength = 255, $multiline = false)
 	{
 		if (is_array($value) || is_object($value) || $value === null) {
 			return '';
@@ -209,25 +218,96 @@ class MarkAutoMecanikLead extends CommonObject
 		if (function_exists('mb_check_encoding') && !mb_check_encoding($value, 'UTF-8')) {
 			$value = mb_convert_encoding($value, 'UTF-8', 'ISO-8859-1');
 		}
-		$value = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $value);
-		$value = trim((string) $value);
+		$value = (string) preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $value);
+		if (!$multiline) {
+			$value = (string) preg_replace('/[\r\n\t]+/', ' ', $value);
+			// Native strip_tags(): unlike dol_string_nohtmltag(), it does not decode entities first
+			$value = strip_tags($value);
+			$value = (string) preg_replace('/ {2,}/', ' ', $value);
+		}
+		$value = trim($value);
 		return dol_substr($value, 0, $maxlength, 'UTF-8');
 	}
 
 	/**
-	 * Normalise all text properties (length, control characters) before saving
+	 * Clean the value of one text field of the lead according to its type
+	 * (single-line or multi-line text, email, phone)
+	 *
+	 * @param string $field Field name (key of MAXLENGTHS)
+	 * @param mixed  $value Raw value
+	 * @return string
+	 */
+	public static function cleanField($field, $value)
+	{
+		$max = isset(self::MAXLENGTHS[$field]) ? self::MAXLENGTHS[$field] : 255;
+		$value = self::cleanText($value, $max, in_array($field, self::MULTILINE_FIELDS, true));
+		if ($field === 'email') {
+			$value = strtolower($value);
+			// Defense in depth: forms, API and import reject such values with an error before
+			if ($value !== '' && !self::isSafeEmail($value)) {
+				$value = '';
+			}
+		} elseif ($field === 'phone') {
+			$value = self::cleanPhone($value);
+		}
+		return $value;
+	}
+
+	/**
+	 * Check that an email is valid and contains only characters that are safe in any context
+	 * (quoted local parts such as "<svg/onload=...>"@example.com are valid per RFC but refused)
+	 *
+	 * @param string $email Email
+	 * @return bool
+	 */
+	public static function isSafeEmail($email)
+	{
+		$email = (string) $email;
+		if ($email === '' || strlen($email) > self::MAXLENGTHS['email']) {
+			return false;
+		}
+		if (!preg_match('/^[A-Za-z0-9.!#$%&*+\/=?^_{|}~-]+@[A-Za-z0-9.-]+$/', $email)) {
+			return false;
+		}
+		return (bool) isValidEmail($email);
+	}
+
+	/**
+	 * Keep only the characters expected in a phone number: digits, spaces and + ( ) . / -
+	 *
+	 * @param string $phone Raw phone number
+	 * @return string
+	 */
+	public static function cleanPhone($phone)
+	{
+		$phone = (string) preg_replace('/[^0-9+().\/ -]/', '', (string) $phone);
+		$phone = trim((string) preg_replace('/ {2,}/', ' ', $phone));
+		return substr($phone, 0, self::MAXLENGTHS['phone']);
+	}
+
+	/**
+	 * Remove line feeds from a value inserted in a plain text email (data stored before 1.1.0
+	 * may still contain some)
+	 *
+	 * @param string $value Value
+	 * @return string
+	 */
+	public static function oneLine($value)
+	{
+		return trim((string) preg_replace('/[\r\n\t]+/', ' ', (string) $value));
+	}
+
+	/**
+	 * Normalise all text properties (length, control characters, HTML, email and phone format) before saving
 	 *
 	 * @return void
 	 */
 	protected function cleanProperties()
 	{
-		foreach (self::MAXLENGTHS as $field => $max) {
+		foreach (array_keys(self::MAXLENGTHS) as $field) {
 			if ($this->$field !== null && $this->$field !== '') {
-				$this->$field = self::cleanText($this->$field, $max);
+				$this->$field = self::cleanField($field, $this->$field);
 			}
-		}
-		if (!empty($this->email)) {
-			$this->email = strtolower($this->email);
 		}
 		if (!in_array($this->origin, array(self::ORIGIN_WEBMECANIK, self::ORIGIN_MANUAL, self::ORIGIN_API), true)) {
 			$this->origin = self::ORIGIN_MANUAL;
@@ -296,6 +376,107 @@ class MarkAutoMecanikLead extends CommonObject
 			return true;
 		}
 		return ((int) $this->fk_user_assign === (int) $user->id || (int) $this->fk_user_creat === (int) $user->id);
+	}
+
+	/**
+	 * SQL condition restricting the third parties (alias $alias) to the ones the user can see,
+	 * following the Dolibarr rules: permission societe/lire and, without societe/client/voir,
+	 * only the third parties the user is sales representative of.
+	 *
+	 * @param User   $user  User
+	 * @param string $alias Alias of the llx_societe table
+	 * @return string SQL fragment starting with " AND " (or empty string)
+	 */
+	public static function getSqlThirdpartyRestriction($user, $alias = 's')
+	{
+		if (!empty($user->socid) || !$user->hasRight('societe', 'lire')) {
+			return ' AND 1 = 0';
+		}
+		if ($user->hasRight('societe', 'client', 'voir')) {
+			return '';
+		}
+		return ' AND EXISTS (SELECT 1 FROM '.MAIN_DB_PREFIX.'societe_commerciaux as mamsc WHERE mamsc.fk_soc = '.$alias.'.rowid AND mamsc.fk_user = '.((int) $user->id).')';
+	}
+
+	/**
+	 * Check that the user is allowed to see a third party
+	 *
+	 * @param DoliDB $db    Database handler
+	 * @param User   $user  User
+	 * @param int    $socid Third party id
+	 * @return bool
+	 */
+	public static function userCanReadThirdparty($db, $user, $socid)
+	{
+		$socid = (int) $socid;
+		if ($socid <= 0) {
+			return false;
+		}
+		$sql = 'SELECT s.rowid FROM '.MAIN_DB_PREFIX.'societe as s';
+		$sql .= ' WHERE s.rowid = '.$socid.' AND s.entity IN ('.getEntity('societe').')';
+		$sql .= self::getSqlThirdpartyRestriction($user, 's');
+		$resql = $db->query($sql);
+		$ok = ($resql && $db->num_rows($resql) > 0);
+		if ($resql) {
+			$db->free($resql);
+		}
+		return $ok;
+	}
+
+	/**
+	 * Check that the user is allowed to see a contact: permission societe/contact/lire, private
+	 * contacts of other users excluded, third party of the contact visible
+	 *
+	 * @param DoliDB $db        Database handler
+	 * @param User   $user      User
+	 * @param int    $contactid Contact id
+	 * @return bool
+	 */
+	public static function userCanReadContact($db, $user, $contactid)
+	{
+		$contactid = (int) $contactid;
+		if ($contactid <= 0 || !empty($user->socid) || !$user->hasRight('societe', 'contact', 'lire')) {
+			return false;
+		}
+		$sql = 'SELECT p.rowid, p.fk_soc, p.priv, p.fk_user_creat FROM '.MAIN_DB_PREFIX.'socpeople as p';
+		$sql .= ' WHERE p.rowid = '.$contactid.' AND p.entity IN ('.getEntity('contact').')';
+		$resql = $db->query($sql);
+		if (!$resql || !($obj = $db->fetch_object($resql))) {
+			return false;
+		}
+		$db->free($resql);
+		if (!empty($obj->priv) && (int) $obj->fk_user_creat !== (int) $user->id) {
+			return false;
+		}
+		if ($obj->fk_soc > 0) {
+			return self::userCanReadThirdparty($db, $user, $obj->fk_soc);
+		}
+		return true;
+	}
+
+	/**
+	 * Check that the user is allowed to see a project (permission projet/lire and project visibility)
+	 *
+	 * @param DoliDB $db        Database handler
+	 * @param User   $user      User
+	 * @param int    $projectid Project id
+	 * @return Project|null The project if visible, null otherwise
+	 */
+	public static function fetchProjectIfReadable($db, $user, $projectid)
+	{
+		$projectid = (int) $projectid;
+		if ($projectid <= 0 || !isModEnabled('project') || !empty($user->socid) || !$user->hasRight('projet', 'lire')) {
+			return null;
+		}
+		require_once DOL_DOCUMENT_ROOT.'/projet/class/project.class.php';
+		$project = new Project($db);
+		if ($project->fetch($projectid) <= 0 || !in_array((int) $project->entity, array_map('intval', explode(',', getEntity('project'))), true)) {
+			return null;
+		}
+		if ($project->restrictedProjectArea($user, 'read') <= 0) {
+			return null;
+		}
+		return $project;
 	}
 
 	/**
@@ -375,7 +556,18 @@ class MarkAutoMecanikLead extends CommonObject
 			}
 		}
 
-		return $this->createCommon($user, $notrigger);
+		$result = $this->createCommon($user, $notrigger);
+
+		// Leads imported from Webmecanik have no author: the user who runs the synchronisation (or the
+		// technical user of the webhook) must not see them all through the "created by me" rule
+		if ($result > 0 && $this->origin === self::ORIGIN_WEBMECANIK) {
+			$sql = 'UPDATE '.MAIN_DB_PREFIX.$this->table_element.' SET fk_user_creat = NULL WHERE rowid = '.((int) $result);
+			if (!$this->db->query($sql)) {
+				dol_syslog(__METHOD__.' '.$this->db->lasterror(), LOG_ERR);
+			}
+			$this->fk_user_creat = null;
+		}
+		return $result;
 	}
 
 	/**
@@ -412,13 +604,25 @@ class MarkAutoMecanikLead extends CommonObject
 	/**
 	 * Delete lead from database
 	 *
-	 * @param User $user      User that deletes
-	 * @param bool $notrigger false=launch triggers, true=disable triggers
+	 * @param User $user           User that deletes
+	 * @param bool $notrigger      false=launch triggers, true=disable triggers
+	 * @param bool $blockReimport  true to add the contact to the opt-out list (never imported again)
 	 * @return int <0 if KO, >0 if OK
 	 */
-	public function delete(User $user, $notrigger = false)
+	public function delete(User $user, $notrigger = false, $blockReimport = false)
 	{
-		return $this->deleteCommon($user, $notrigger);
+		$this->db->begin();
+		if ($blockReimport && $this->addToOptOut($user, $this->email, $this->wm_contact_id) < 0) {
+			$this->db->rollback();
+			return -1;
+		}
+		$result = $this->deleteCommon($user, $notrigger);
+		if ($result > 0) {
+			$this->db->commit();
+		} else {
+			$this->db->rollback();
+		}
+		return $result;
 	}
 
 	// -------------------------------------------------------------------------------------------
@@ -507,13 +711,10 @@ class MarkAutoMecanikLead extends CommonObject
 	public function linkThirdparty(User $user, $socid)
 	{
 		$socid = (int) $socid;
-		if ($socid > 0) {
-			require_once DOL_DOCUMENT_ROOT.'/societe/class/societe.class.php';
-			$soc = new Societe($this->db);
-			if ($soc->fetch($socid) <= 0 || !in_array((int) $soc->entity, array_map('intval', explode(',', getEntity('societe'))), true)) {
-				$this->error = 'ErrorRecordNotFound';
-				return -1;
-			}
+		// Same answer for a missing and for a hidden third party: no enumeration
+		if ($socid > 0 && !self::userCanReadThirdparty($this->db, $user, $socid)) {
+			$this->error = 'ErrorRecordNotFound';
+			return -1;
 		}
 		$this->fk_soc = ($socid > 0 ? $socid : null);
 		// A contact belonging to another thirdparty is no longer consistent
@@ -541,10 +742,19 @@ class MarkAutoMecanikLead extends CommonObject
 	public function linkContact(User $user, $contactid)
 	{
 		$contactid = (int) $contactid;
+		if (!self::userCanReadContact($this->db, $user, $contactid)) {
+			$this->error = 'ErrorRecordNotFound';
+			return -1;
+		}
 		$sql = 'SELECT rowid, fk_soc FROM '.MAIN_DB_PREFIX.'socpeople';
 		$sql .= ' WHERE rowid = '.$contactid.' AND entity IN ('.getEntity('contact').')';
 		$resql = $this->db->query($sql);
 		if (!$resql || !($obj = $this->db->fetch_object($resql))) {
+			$this->error = 'ErrorRecordNotFound';
+			return -1;
+		}
+		// The contact must belong to the third party already linked to the lead
+		if ($this->fk_soc > 0 && (int) $obj->fk_soc !== (int) $this->fk_soc) {
 			$this->error = 'ErrorRecordNotFound';
 			return -1;
 		}
@@ -556,7 +766,9 @@ class MarkAutoMecanikLead extends CommonObject
 	}
 
 	/**
-	 * Add the assigned sales representative to the sales representatives of the linked thirdparty
+	 * Add the assigned sales representative to the sales representatives of the linked thirdparty.
+	 * Only done when the user doing the action may modify the third party (societe/creer) and see it:
+	 * Societe::add_commercial() checks no permission by itself.
 	 *
 	 * @param User $user User
 	 * @return int 0 if nothing to do, <0 if KO, >0 if OK
@@ -564,6 +776,9 @@ class MarkAutoMecanikLead extends CommonObject
 	public function addSalesRepToThirdparty(User $user)
 	{
 		if (!($this->fk_soc > 0) || !($this->fk_user_assign > 0)) {
+			return 0;
+		}
+		if (!$user->hasRight('societe', 'creer') || !self::userCanReadThirdparty($this->db, $user, $this->fk_soc)) {
 			return 0;
 		}
 		require_once DOL_DOCUMENT_ROOT.'/societe/class/societe.class.php';
@@ -579,18 +794,45 @@ class MarkAutoMecanikLead extends CommonObject
 	}
 
 	/**
-	 * GDPR anonymisation: personal data are erased, statistical data (company, industry, dates,
-	 * status, sales representative) are kept. The lead is archived.
+	 * GDPR anonymisation: personal data are erased, statistical data (industry, country, language,
+	 * UTM tags, dates, status, sales representative and, unless MARKAUTOMECANIK_ANONYMIZE_COMPANY is
+	 * set, company) are kept. The lead is archived.
 	 *
-	 * @param User $user User
+	 * When $blockReimport is true (erasure request), a salted hash of the email and of the Webmecanik
+	 * id is kept in the opt-out list so that the contact is never imported again.
+	 *
+	 * @param User $user          User
+	 * @param bool $blockReimport true to add the contact to the opt-out list
 	 * @return int <0 if KO, >0 if OK
 	 */
-	public function anonymize(User $user)
+	public function anonymize(User $user, $blockReimport = true)
 	{
+		$this->db->begin();
+		if ($blockReimport) {
+			// The object may only carry its id (scheduled purge): read the identifiers from the database
+			$sql = 'SELECT email, wm_contact_id FROM '.MAIN_DB_PREFIX.$this->table_element;
+			$sql .= ' WHERE rowid = '.((int) $this->id).' AND entity IN ('.getEntity($this->element).')';
+			$resql = $this->db->query($sql);
+			if (!$resql) {
+				$this->error = $this->db->lasterror();
+				$this->db->rollback();
+				return -1;
+			}
+			$obj = $this->db->fetch_object($resql);
+			$this->db->free($resql);
+			if ($obj && $this->addToOptOut($user, $obj->email, $obj->wm_contact_id) < 0) {
+				$this->db->rollback();
+				return -1;
+			}
+		}
+
 		$sql = 'UPDATE '.MAIN_DB_PREFIX.$this->table_element.' SET';
 		$sql .= " firstname = NULL, lastname = NULL, email = NULL, phone = NULL, city = NULL, website = NULL,";
 		$sql .= " message = NULL, interests = NULL, note_private = NULL, lost_reason = NULL,";
 		$sql .= " wm_contact_id = NULL, fk_socpeople = NULL,";
+		if (getDolGlobalInt('MARKAUTOMECANIK_ANONYMIZE_COMPANY')) {
+			$sql .= " company = NULL,";
+		}
 		$sql .= ' status = '.self::STATUS_ARCHIVED.',';
 		$sql .= " date_status = '".$this->db->idate(dol_now())."',";
 		$sql .= " date_anonymized = '".$this->db->idate(dol_now())."',";
@@ -600,10 +842,152 @@ class MarkAutoMecanikLead extends CommonObject
 		if (!$this->db->query($sql)) {
 			$this->error = $this->db->lasterror();
 			dol_syslog(__METHOD__.' '.$this->error, LOG_ERR);
+			$this->db->rollback();
 			return -1;
 		}
+		$this->db->commit();
 		dol_syslog(__METHOD__.' lead id='.((int) $this->id).' anonymised by user id='.((int) $user->id), LOG_NOTICE);
 		return 1;
+	}
+
+	// -------------------------------------------------------------------------------------------
+	// Opt-out list (contacts never imported again after an erasure request)
+	// -------------------------------------------------------------------------------------------
+
+	/**
+	 * Secret salt of the opt-out hashes of the current entity, created on first use.
+	 * The constant name ends with _KEY so that Dolibarr stores it encrypted.
+	 *
+	 * @return string
+	 */
+	public static function getOptOutSalt()
+	{
+		global $db, $conf;
+		$salt = getDolGlobalString('MARKAUTOMECANIK_OPTOUT_KEY');
+		if ($salt === '') {
+			require_once DOL_DOCUMENT_ROOT.'/core/lib/admin.lib.php';
+			$salt = bin2hex(random_bytes(32));
+			dolibarr_set_const($db, 'MARKAUTOMECANIK_OPTOUT_KEY', $salt, 'chaine', 0, 'Salt of the GDPR opt-out hashes, do not change', $conf->entity);
+		}
+		return $salt;
+	}
+
+	/**
+	 * Salted hash of an identifier for the opt-out list
+	 *
+	 * @param string $type  OPTOUT_EMAIL or OPTOUT_WMID
+	 * @param string $value Email or Webmecanik contact id
+	 * @param string $salt  Salt (default: salt of the current entity)
+	 * @return string Hexadecimal SHA-256 HMAC, empty string if the value is empty
+	 */
+	public static function optOutHash($type, $value, $salt = null)
+	{
+		$value = ($type === self::OPTOUT_EMAIL ? strtolower(trim((string) $value)) : (string) ((int) $value));
+		if ($value === '' || $value === '0') {
+			return '';
+		}
+		return hash_hmac('sha256', $type.':'.$value, ($salt === null ? self::getOptOutSalt() : (string) $salt));
+	}
+
+	/**
+	 * SQL condition matching the opt-out entries of a contact
+	 *
+	 * @param string $email       Email
+	 * @param int    $wmContactId Webmecanik contact id
+	 * @return string SQL condition, empty string if there is no identifier
+	 */
+	protected function getOptOutCondition($email, $wmContactId)
+	{
+		$or = array();
+		$hash = self::optOutHash(self::OPTOUT_EMAIL, $email);
+		if ($hash !== '') {
+			$or[] = "email_hash = '".$this->db->escape($hash)."'";
+		}
+		$hash = self::optOutHash(self::OPTOUT_WMID, $wmContactId);
+		if ($hash !== '') {
+			$or[] = "wmid_hash = '".$this->db->escape($hash)."'";
+		}
+		return (empty($or) ? '' : '('.implode(' OR ', $or).')');
+	}
+
+	/**
+	 * Add a contact to the opt-out list of the current entity
+	 *
+	 * @param User   $user        User
+	 * @param string $email       Email
+	 * @param int    $wmContactId Webmecanik contact id
+	 * @return int <0 if KO, 0 if nothing to add, >0 if added
+	 */
+	public function addToOptOut($user, $email, $wmContactId)
+	{
+		global $conf;
+		$emailHash = self::optOutHash(self::OPTOUT_EMAIL, $email);
+		$wmidHash = self::optOutHash(self::OPTOUT_WMID, $wmContactId);
+		if ($emailHash === '' && $wmidHash === '') {
+			return 0;
+		}
+		$sql = 'INSERT INTO '.MAIN_DB_PREFIX.'markautomecanik_optout (entity, email_hash, wmid_hash, date_creation, fk_user)';
+		$sql .= ' VALUES ('.((int) $conf->entity);
+		$sql .= ', '.($emailHash !== '' ? "'".$this->db->escape($emailHash)."'" : 'NULL');
+		$sql .= ', '.($wmidHash !== '' ? "'".$this->db->escape($wmidHash)."'" : 'NULL');
+		$sql .= ", '".$this->db->idate(dol_now())."', ".(is_object($user) && $user->id > 0 ? (int) $user->id : 'NULL').')';
+		if (!$this->db->query($sql)) {
+			$this->error = $this->db->lasterror();
+			dol_syslog(__METHOD__.' '.$this->error, LOG_ERR);
+			return -1;
+		}
+		return 1;
+	}
+
+	/**
+	 * Check whether a contact is in the opt-out list (by email or by Webmecanik id)
+	 *
+	 * @param string $email       Email
+	 * @param int    $wmContactId Webmecanik contact id
+	 * @return bool
+	 */
+	public function isOptedOut($email, $wmContactId = 0)
+	{
+		global $conf;
+		$cond = $this->getOptOutCondition($email, $wmContactId);
+		if ($cond === '') {
+			return false;
+		}
+		$sql = 'SELECT rowid FROM '.MAIN_DB_PREFIX.'markautomecanik_optout';
+		$sql .= ' WHERE entity = '.((int) $conf->entity).' AND '.$cond;
+		$resql = $this->db->query($sql);
+		if (!$resql) {
+			// Fail closed: a contact is not imported if the opt-out list cannot be checked
+			dol_syslog(__METHOD__.' '.$this->db->lasterror(), LOG_ERR);
+			return true;
+		}
+		$found = ($this->db->num_rows($resql) > 0);
+		$this->db->free($resql);
+		return $found;
+	}
+
+	/**
+	 * Remove a contact from the opt-out list (the person gave a new consent). The entries matching
+	 * the email are removed together with the Webmecanik id stored with them.
+	 *
+	 * @param string $email Email
+	 * @return int <0 if KO, number of entries removed otherwise
+	 */
+	public function removeFromOptOut($email)
+	{
+		global $conf;
+		$hash = self::optOutHash(self::OPTOUT_EMAIL, $email);
+		if ($hash === '') {
+			return 0;
+		}
+		$sql = 'DELETE FROM '.MAIN_DB_PREFIX.'markautomecanik_optout';
+		$sql .= ' WHERE entity = '.((int) $conf->entity)." AND email_hash = '".$this->db->escape($hash)."'";
+		$resql = $this->db->query($sql);
+		if (!$resql) {
+			$this->error = $this->db->lasterror();
+			return -1;
+		}
+		return (int) $this->db->affected_rows($resql);
 	}
 
 	// -------------------------------------------------------------------------------------------

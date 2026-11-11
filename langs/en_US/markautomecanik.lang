@@ -85,7 +85,7 @@ PushStatusTag = Push status to Webmecanik
 TagPushed = Status pushed to Webmecanik
 WarningTagNotPushed = The status could not be pushed to Webmecanik.
 AnonymizeLead = Anonymise (GDPR)
-ConfirmAnonymizeLead = Personal data of this lead (name, email, phone, town, message, notes) will be permanently erased. Remember to also delete the contact in Webmecanik, otherwise it may be imported again on its next activity. Continue?
+ConfirmAnonymizeLead = Personal data of this lead (name, email, phone, town, message, notes) will be permanently erased and the contact will never be imported again from Webmecanik (only a salted hash of its email and Webmecanik id is kept). Remember to also delete the contact in Webmecanik. Continue?
 LeadAnonymized = Lead anonymised
 LeadAnonymizedOn = Lead anonymised on %s (GDPR): its personal data have been erased.
 LeadIsAnonymized = This lead is anonymised and can no longer be modified
@@ -158,7 +158,7 @@ ImportRules = Import rules
 MinPoints = Minimum points
 MinPointsHelp = Only contacts with at least this number of points are imported.
 SegmentAlias = Segment alias (optional)
-SegmentAliasHelp = If set, only contacts of this Webmecanik segment are imported.
+SegmentAliasHelp = If set, only contacts of this Webmecanik segment are imported (by the scheduled job and by the webhook).
 FieldMessage = Custom field alias: message
 FieldInterests = Custom field alias: interests
 FieldIndustry = Custom field alias: industry
@@ -173,7 +173,7 @@ AlertEmailHelp = Receives the daily list of late unassigned leads (empty = disab
 RemindMaxAgeMonths = Reminder horizon (months)
 RemindMaxAgeMonthsHelp = Leads created before this horizon are ignored by reminders.
 RetentionMonths = Retention of unconverted leads (months)
-RetentionMonthsHelp = 0 = unlimited. Beyond this period without activity, the GDPR scheduled job anonymises unconverted leads.
+RetentionMonthsHelp = 0 = unlimited. Beyond this period without status change, the GDPR scheduled job anonymises unconverted leads not linked to a third party (assigned leads included). Purged contacts can be imported again if they show new activity.
 ClosedLoop = Closed loop with Webmecanik
 PushTags = Push lead status as a tag
 PushTagsHelp = When the status changes, the contact is tagged in Webmecanik (e.g. dolibarr-converted) so you can build segments and campaigns.
@@ -184,7 +184,7 @@ WebhookEnabledHelp = Optional. The scheduled job remains the reference; the webh
 WebhookUrl = URL to declare in Webmecanik
 WebhookUrlHelp = In Webmecanik: Settings > Webhooks > New, events "Contact updated" and "Contact points changed".
 WebhookSecret = Webhook secret
-WebhookSecretHelp = Copy here the secret displayed by Webmecanik for this webhook. Every call is verified with an HMAC-SHA256 signature.
+WebhookSecretHelp = Copy here the secret displayed by Webmecanik for this webhook (at least %s characters), or generate one and copy it into Webmecanik. Every call is verified with an HMAC-SHA256 signature.
 WebhookUser = Author of the leads created by the webhook
 WebhookUserHelp = Technical user recorded as creator of the leads imported by the webhook.
 ErrorWebmecanikUrlMustBeHttps = The instance URL must be a valid https URL without credentials, parameters or fragment
@@ -218,3 +218,21 @@ ConversionRate = Conversion rate
 LeadDashboardBox = Marketing leads
 LeadLate = Late leads (> %s days)
 LeadConversionRate12Months = Conversion rate (12 months)
+
+# 1.1.0 - Security hardening
+ErrorWebhookSecretTooShort = The webhook secret must contain at least %s characters
+GenerateWebhookSecret = Generate a new secret
+WebhookSecretGenerated = New webhook secret, copy it now into the webhook settings of Webmecanik (it will not be displayed again): %s
+WarningEncryptionUnavailable = Secrets cannot be encrypted: the PHP openssl extension is missing or $dolibarr_main_instance_unique_id is empty in conf.php. Secrets are then stored in clear in the database.
+WarningSecretsNotEncrypted = These secrets are stored in clear in the database: %s. Fix the encryption prerequisites, then enter them again.
+WarningWebhookSecretTooShort = The webhook secret is shorter than %s characters: generate a new one and copy it into Webmecanik.
+AllowPrivateIp = Allow a private IP address
+AllowPrivateIpHelp = By default the instance URL must resolve to a public IP address (protection against requests to internal hosts). Check only for a Webmecanik instance hosted on your internal network.
+AnonymizeCompany = Also erase the company
+AnonymizeCompanyHelp = By default the company is kept for statistics. Check it if your leads are often sole traders, for whom the company name is personal data.
+OptOutRemove = Allow a contact to be imported again
+OptOutRemoveHelp = Contacts anonymised (or deleted with this option) are never imported again. Enter the email of a person who gave a new consent to remove it from this exclusion list.
+OptOutRemoved = The contact can be imported again
+OptOutNotFound = This email is not in the exclusion list
+BlockReimport = Never import this contact again from Webmecanik (erasure request)
+LinkedRecordNotVisible = Linked record you are not allowed to see

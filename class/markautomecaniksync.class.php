@@ -130,6 +130,56 @@ class MarkAutoMecanikSync
 	}
 
 	/**
+	 * Check that the tables added in 1.1.0 exist (they are created when the module is re-enabled)
+	 *
+	 * @return bool
+	 */
+	protected function checkSchema()
+	{
+		foreach (array('markautomecanik_optout', 'markautomecanik_lock') as $table) {
+			$resql = $this->db->query('SELECT COUNT(*) as nb FROM '.MAIN_DB_PREFIX.$table.' WHERE 1 = 0');
+			if (!$resql) {
+				$this->error = 'Table '.MAIN_DB_PREFIX.$table.' is missing: disable and re-enable the module to complete its upgrade';
+				dol_syslog(__METHOD__.' '.$this->error, LOG_ERR);
+				return false;
+			}
+			$this->db->free($resql);
+		}
+		return true;
+	}
+
+	/**
+	 * Take a short-lived lock on a contact (unique key in llx_markautomecanik_lock)
+	 *
+	 * @param string $key Lock key (at most 64 characters)
+	 * @return bool
+	 */
+	protected function acquireContactLock($key)
+	{
+		global $conf;
+		$table = MAIN_DB_PREFIX.'markautomecanik_lock';
+		// Locks left by a crashed process
+		$this->db->query('DELETE FROM '.$table.' WHERE entity = '.((int) $conf->entity)." AND date_creation < '".$this->db->idate(dol_now() - 300)."'");
+		$sql = 'INSERT INTO '.$table.' (entity, lockkey, date_creation)';
+		$sql .= ' VALUES ('.((int) $conf->entity).", '".$this->db->escape(substr($key, 0, 64))."', '".$this->db->idate(dol_now())."')";
+		return (bool) $this->db->query($sql);
+	}
+
+	/**
+	 * Release a contact lock
+	 *
+	 * @param string $key Lock key
+	 * @return void
+	 */
+	protected function releaseContactLock($key)
+	{
+		global $conf;
+		$sql = 'DELETE FROM '.MAIN_DB_PREFIX.'markautomecanik_lock';
+		$sql .= ' WHERE entity = '.((int) $conf->entity)." AND lockkey = '".$this->db->escape(substr($key, 0, 64))."'";
+		$this->db->query($sql);
+	}
+
+	/**
 	 * Write a line in the synchronisation history
 	 *
 	 * @param string $trigger 'cron', 'manual' or 'webhook'
@@ -273,7 +323,7 @@ class MarkAutoMecanikSync
 		$data = self::mapContact($contact);
 		$ref = 'contact #'.$data['wm_contact_id'];
 
-		if ($data['email'] === '' || !isValidEmail($data['email'])) {
+		if ($data['email'] === '' || !MarkAutoMecanikLead::isSafeEmail($data['email'])) {
 			$this->stats['skipped']++;
 			dol_syslog(__METHOD__.' '.$ref.' skipped: no valid email', LOG_DEBUG);
 			return 'skipped';
@@ -285,6 +335,36 @@ class MarkAutoMecanikSync
 		}
 
 		$lead = new MarkAutoMecanikLead($this->db);
+		// GDPR: contacts erased on request are never imported again
+		if ($lead->isOptedOut($data['email'], $data['wm_contact_id'])) {
+			$this->stats['skipped']++;
+			dol_syslog(__METHOD__.' '.$ref.' skipped: opt-out list', LOG_DEBUG);
+			return 'skipped';
+		}
+
+		// Two concurrent imports of the same contact (webhook + scheduled job) must not create two leads
+		$lockKey = 'contact:'.hash('sha256', $data['email']);
+		if (!$this->acquireContactLock($lockKey)) {
+			$this->stats['skipped']++;
+			dol_syslog(__METHOD__.' '.$ref.' skipped: being imported by another process', LOG_DEBUG);
+			return 'skipped';
+		}
+		$result = $this->importMappedContact($lead, $data, $ref, $user);
+		$this->releaseContactLock($lockKey);
+		return $result;
+	}
+
+	/**
+	 * Create, refresh or skip the lead of a mapped contact (the contact lock is held)
+	 *
+	 * @param MarkAutoMecanikLead $lead Empty lead object
+	 * @param array               $data Mapped contact (see mapContact())
+	 * @param string              $ref  Reference of the contact for the logs
+	 * @param User                $user User used as author
+	 * @return string 'created', 'updated', 'skipped' or 'error'
+	 */
+	protected function importMappedContact($lead, $data, $ref, $user)
+	{
 		$match = $lead->findForSync($data['email'], $data['wm_contact_id'], $data['wm_date_modified']);
 
 		if ($match['action'] === 'error') {
@@ -353,6 +433,9 @@ class MarkAutoMecanikSync
 		$client = $this->getClient();
 		if (!$client->isConfigured()) {
 			$this->error = $client->error;
+			return -1;
+		}
+		if (!$this->checkSchema()) {
 			return -1;
 		}
 		if (!$this->acquireLock()) {
@@ -436,7 +519,27 @@ class MarkAutoMecanikSync
 			$this->error = $client->error;
 			return -1;
 		}
+		if (!$this->checkSchema()) {
+			return -1;
+		}
+		// The segment filter of the scheduled synchronisation applies to the webhook too
+		$segment = getDolGlobalString('MARKAUTOMECANIK_SEGMENT');
 		foreach ($ids as $id) {
+			if ($segment !== '') {
+				$aliases = $client->getContactSegmentAliases((int) $id);
+				if ($aliases === null) {
+					$this->stats['received']++;
+					$this->stats['errors']++;
+					$this->error = $client->error;
+					continue;
+				}
+				if (!in_array($segment, $aliases, true)) {
+					$this->stats['received']++;
+					$this->stats['skipped']++;
+					dol_syslog(__METHOD__.' contact #'.((int) $id).' skipped: not in segment', LOG_DEBUG);
+					continue;
+				}
+			}
 			$contact = $client->getContact((int) $id);
 			if ($contact === null) {
 				$this->stats['errors']++;
@@ -559,7 +662,7 @@ class MarkAutoMecanikSync
 			// Only the lead reference and the company are sent by email (data minimisation)
 			$body = $outlangs->transnoentities('ReminderBodyAssigned', $slaDays)."\n\n";
 			foreach ($leads as $lead) {
-				$body .= '- #'.((int) $lead->rowid).($lead->company ? ' - '.$lead->company : '').' : '.$cardUrl.((int) $lead->rowid)."\n";
+				$body .= '- #'.((int) $lead->rowid).($lead->company ? ' - '.MarkAutoMecanikLead::oneLine($lead->company) : '').' : '.$cardUrl.((int) $lead->rowid)."\n";
 			}
 			$subject = $outlangs->transnoentities('ReminderSubjectAssigned', count($leads));
 			$mail = new CMailFile($subject, $rep->email, $from, $body, array(), array(), array(), '', '', 0, 0, '', '', 'mamremind'.$userId);
@@ -583,7 +686,7 @@ class MarkAutoMecanikSync
 			}
 			$body = $langs->transnoentities('ReminderBodyNew', $slaDays)."\n\n";
 			while ($obj = $this->db->fetch_object($resql)) {
-				$body .= '- #'.((int) $obj->rowid).($obj->company ? ' - '.$obj->company : '').' : '.$cardUrl.((int) $obj->rowid)."\n";
+				$body .= '- #'.((int) $obj->rowid).($obj->company ? ' - '.MarkAutoMecanikLead::oneLine($obj->company) : '').' : '.$cardUrl.((int) $obj->rowid)."\n";
 				$nbLate++;
 			}
 			$this->db->free($resql);
@@ -608,7 +711,11 @@ class MarkAutoMecanikSync
 
 	/**
 	 * Scheduled job: GDPR anonymisation of unconverted leads older than MARKAUTOMECANIK_RETENTION_MONTHS
-	 * without any activity during that period. Converted leads and leads linked to a thirdparty are kept.
+	 * without any status change during that period, including assigned leads left untouched.
+	 * Converted leads and leads linked to a thirdparty are kept: the relationship (and the personal
+	 * data) is then managed by the third party, contact and project records of Dolibarr.
+	 * The purge applies a retention period, it is not an erasure request: purged contacts are not
+	 * added to the opt-out list and can be imported again if they show new activity.
 	 *
 	 * @return int 0 if OK, <0 if KO
 	 */
@@ -630,7 +737,7 @@ class MarkAutoMecanikSync
 		$sql .= " AND (t.date_status IS NULL OR t.date_status < '".$this->db->idate($limit)."')";
 		$sql .= ' AND t.date_anonymized IS NULL';
 		$sql .= ' AND (t.fk_soc IS NULL OR t.fk_soc = 0)';
-		$sql .= ' AND t.status NOT IN ('.MarkAutoMecanikLead::STATUS_CONVERTED.', '.MarkAutoMecanikLead::STATUS_ASSIGNED.')';
+		$sql .= ' AND t.status <> '.MarkAutoMecanikLead::STATUS_CONVERTED;
 		$resql = $this->db->query($sql);
 		if (!$resql) {
 			$this->error = $this->db->lasterror();
@@ -646,7 +753,7 @@ class MarkAutoMecanikSync
 		$lead = new MarkAutoMecanikLead($this->db);
 		foreach ($ids as $id) {
 			$lead->id = $id;
-			if ($lead->anonymize($user) > 0) {
+			if ($lead->anonymize($user, false) > 0) {
 				$nb++;
 			}
 		}
