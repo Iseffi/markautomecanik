@@ -26,7 +26,8 @@ pour boucler la boucle marketing / ventes.
 - **Boucle fermée** : statut renvoyé à Webmecanik sous forme de tags (`dolibarr-converted`, `dolibarr-lost`…).
 - **Relances** : email quotidien aux commerciaux pour les leads en attente au-delà du délai de traitement,
   récapitulatif des leads non affectés en retard à une adresse partagée.
-- **RGPD** : anonymisation en un clic et purge planifiée des leads non convertis après la durée de conservation.
+- **RGPD** : anonymisation en un clic (le contact n'est ensuite plus jamais importé) et purge planifiée
+  des leads non convertis après la durée de conservation.
 - **Widget** de tableau de bord, **statistiques** (par mois, statut, commercial, taux de conversion)
   et **historique des synchronisations**.
 - **API REST** (`/api/index.php/markautomecanik/leads`) en lecture et création.
@@ -37,7 +38,7 @@ pour boucler la boucle marketing / ventes.
 | Composant | Version |
 |-----------|---------|
 | Dolibarr  | 19.0 ou supérieure (testé avec 19, 21, 22, 23 et 24) |
-| PHP       | 7.4 ou supérieure (testé jusqu'à 8.5), extensions `curl`, `json` et `openssl` |
+| PHP       | 7.4 ou supérieure (testé jusqu'à 8.5 ; 7.4 et 8.0 ne sont plus maintenues par PHP, utilisez 8.2 ou plus), extensions `curl`, `json` et `openssl` |
 | Base de données | MySQL / MariaDB |
 | Webmecanik Automation | API activée (Paramètres > Configuration > Paramètres de l'API) |
 
@@ -57,13 +58,17 @@ Activez ensuite **Webmecanik marketing automation** dans *Accueil > Configuratio
 
 1. **Dans Webmecanik** : activez l'API ; créez des identifiants OAuth2 (*Paramètres > Identifiants API*,
    recommandé) ou un utilisateur API dédié aux droits limités à *Contacts : voir* (et *modifier* si la
-   boucle fermée est activée).
+   boucle fermée est activée). Selon la version de Webmecanik, des identifiants OAuth2 *client credentials*
+   peuvent ne pas être rattachés à un rôle restreint et donner accès à toute l'API : vérifiez-le avec
+   votre administrateur Webmecanik et, à défaut, préférez l'authentification basique avec un utilisateur
+   dédié aux droits restreints.
 2. **Dans Dolibarr** : renseignez l'URL de l'instance (https uniquement), le mode d'authentification et
    les identifiants, le seuil de points, puis cliquez sur **Tester la connexion** et
    **Synchroniser maintenant** (fenêtre de 30 jours par exemple pour l'import initial).
 3. **Tâches planifiées** : activez les tâches « Webmecanik - … » (synchronisation horaire, relances et
    purge RGPD quotidiennes). Elles sont créées désactivées.
-4. **Webhook (optionnel)** : collez le secret, activez le webhook, puis déclarez l'URL affichée dans
+4. **Webhook (optionnel)** : cochez *Générer un nouveau secret* (ou collez un secret d'au moins
+   32 caractères), activez le webhook, puis déclarez l'URL et le secret affichés dans
    Webmecanik (*Paramètres > Webhooks*), événements « Contact mis à jour » et « Points du contact modifiés ».
 5. **Droits** : lecture de ses leads / de tous les leads, qualification, suppression et anonymisation,
    lancement manuel de la synchronisation.
@@ -72,8 +77,22 @@ Activez ensuite **Webmecanik marketing automation** dans *Accueil > Configuratio
 
 Voir [SECURITY.md](SECURITY.md) : secrets chiffrés en base et jamais réaffichés ni journalisés,
 HTTPS imposé avec vérification des certificats et refus des redirections, jeton CSRF et droits vérifiés
-sur chaque action, visibilité par lead et isolation multi-société, webhook signé HMAC, aucune donnée
-personnelle dans les journaux.
+sur chaque action, visibilité par lead et isolation multi-société, tiers / contacts / projets liés
+affichés selon les droits Dolibarr de l'utilisateur, saisies normalisées et affichage échappé, appels
+sortants via le proxy Dolibarr vers des adresses publiques uniquement, webhook signé HMAC et limité en
+débit, aucune donnée personnelle dans les journaux (sauf au niveau `LOG_DEBUG`, où Dolibarr journalise
+toutes les requêtes SQL).
+
+Prérequis du chiffrement des secrets : extension PHP `openssl` et `$dolibarr_main_instance_unique_id`
+renseigné dans `conf.php` (fichier à laisser en lecture seule). Sinon Dolibarr stocke les secrets en
+clair et la page de configuration affiche une alerte. Les secrets sont supprimés à la désactivation du
+module.
+
+## Mise à jour
+
+Après remplacement des fichiers, désactivez puis réactivez le module pour créer les nouvelles tables
+(1.1.0 : liste d'exclusion RGPD et verrous d'import). La désactivation supprime les identifiants
+Webmecanik et le secret du webhook : saisissez-les à nouveau dans la configuration.
 
 ## Licence
 

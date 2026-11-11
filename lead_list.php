@@ -177,7 +177,8 @@ $title = $langs->trans('MarketingLeads');
 llxHeader('', $title, '', '', 0, 0, '', '', '', 'mod-markautomecanik page-list');
 
 $sqlfrom = ' FROM '.MAIN_DB_PREFIX.'markautomecanik_lead as t';
-$sqlfrom .= ' LEFT JOIN '.MAIN_DB_PREFIX.'societe as s ON s.rowid = t.fk_soc';
+// Only the third parties the user is allowed to see are joined (name displayed and searchable)
+$sqlfrom .= ' LEFT JOIN '.MAIN_DB_PREFIX.'societe as s ON s.rowid = t.fk_soc'.MarkAutoMecanikLead::getSqlThirdpartyRestriction($user, 's');
 $sqlwhere = ' WHERE t.entity IN ('.getEntity($object->element).')';
 $sqlwhere .= MarkAutoMecanikLead::getSqlUserRestriction($user, 't');
 if ($search_status > 0) {

@@ -32,6 +32,9 @@ require_once DOL_DOCUMENT_ROOT.'/core/lib/security.lib.php';
  * - secrets stored encrypted in database (dolEncrypt) and never written to logs;
  * - response size and duration bounded;
  * - only paths under /api/ of the configured instance can be called;
+ * - the instance must resolve to public IP addresses (no loopback, private or reserved address,
+ *   unless MARKAUTOMECANIK_ALLOW_PRIVATE_IP is set), and the resolved address is pinned for the call;
+ * - the outgoing proxy of Dolibarr (MAIN_PROXY_*) is honoured;
  * - personal data contained in responses is never logged.
  */
 class MarkAutoMecanikWebmecanikClient
@@ -71,6 +74,102 @@ class MarkAutoMecanikWebmecanikClient
 
 	/** @var int Last HTTP code */
 	public $lastHttpCode = 0;
+
+	/** @var int Connection timeout (seconds) */
+	protected $connectTimeout = 10;
+
+	/** @var int Total timeout of a call (seconds) */
+	protected $timeout = 60;
+
+	/**
+	 * Change the timeouts (the webhook uses shorter ones than the scheduled job)
+	 *
+	 * @param int $connectTimeout Connection timeout in seconds
+	 * @param int $timeout        Total timeout in seconds
+	 * @return void
+	 */
+	public function setTimeouts($connectTimeout, $timeout)
+	{
+		$this->connectTimeout = max(1, (int) $connectTimeout);
+		$this->timeout = max($this->connectTimeout, (int) $timeout);
+	}
+
+	/**
+	 * Check that an IP address is a public unicast address (not loopback, private, link-local,
+	 * reserved, carrier-grade NAT or IPv4-mapped)
+	 *
+	 * @param string $ip IP address
+	 * @return bool
+	 */
+	public static function isPublicIp($ip)
+	{
+		$ip = trim((string) $ip, '[] ');
+		if (filter_var($ip, FILTER_VALIDATE_IP) === false) {
+			return false;
+		}
+		if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
+			return false;
+		}
+		if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) !== false) {
+			$long = ip2long($ip);
+			$ranges = array(
+				array('0.0.0.0', 8), array('10.0.0.0', 8), array('100.64.0.0', 10), array('127.0.0.0', 8),
+				array('169.254.0.0', 16), array('172.16.0.0', 12), array('192.0.0.0', 24), array('192.168.0.0', 16),
+				array('198.18.0.0', 15), array('224.0.0.0', 4), array('240.0.0.0', 4),
+			);
+			foreach ($ranges as $range) {
+				$mask = -1 << (32 - $range[1]);
+				if (($long & $mask) === (ip2long($range[0]) & $mask)) {
+					return false;
+				}
+			}
+			return true;
+		}
+		$bin = inet_pton($ip);
+		if ($bin === false) {
+			return false;
+		}
+		// ::, ::1, IPv4-mapped / compatible (::ffff:0:0/96, ::/96), unique local fc00::/7, link-local fe80::/10, multicast ff00::/8
+		if (substr($bin, 0, 12) === str_repeat("\0", 10)."\xff\xff" || substr($bin, 0, 12) === str_repeat("\0", 12)) {
+			return false;
+		}
+		$first = ord($bin[0]);
+		$second = ord($bin[1]);
+		if (($first & 0xfe) === 0xfc || ($first === 0xfe && ($second & 0xc0) === 0x80) || $first === 0xff) {
+			return false;
+		}
+		return true;
+	}
+
+	/**
+	 * Resolve a host name into its IPv4 and IPv6 addresses
+	 *
+	 * @param string $host Host name or IP literal
+	 * @return string[]
+	 */
+	protected static function resolveHost($host)
+	{
+		$host = trim((string) $host, '[]');
+		if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
+			return array($host);
+		}
+		$ips = array();
+		$v4 = @gethostbynamel($host);
+		if (is_array($v4)) {
+			$ips = $v4;
+		}
+		if (function_exists('dns_get_record')) {
+			$v6 = @dns_get_record($host, DNS_AAAA);
+			if (is_array($v6)) {
+				foreach ($v6 as $record) {
+					if (!empty($record['ipv6'])) {
+						$ips[] = $record['ipv6'];
+					}
+				}
+			}
+		}
+		return array_values(array_unique($ips));
+	}
 
 	/**
 	 * Constructor: loads the configuration of the current entity
@@ -203,6 +302,31 @@ class MarkAutoMecanikWebmecanikClient
 			return false;
 		}
 
+		$parts = parse_url($this->baseUrl);
+		$host = isset($parts['host']) ? $parts['host'] : '';
+		$port = isset($parts['port']) ? (int) $parts['port'] : 443;
+		$useProxy = (getDolGlobalInt('MAIN_PROXY_USE') && getDolGlobalString('MAIN_PROXY_HOST') !== '');
+
+		// Anti-SSRF: the instance must resolve to public addresses only; the address checked is pinned
+		// for the call so that a second DNS resolution cannot return another one (DNS rebinding)
+		$pinnedIp = '';
+		if (!getDolGlobalInt('MARKAUTOMECANIK_ALLOW_PRIVATE_IP')) {
+			$ips = self::resolveHost($host);
+			if (empty($ips)) {
+				$this->error = 'Unable to resolve the host name of the Webmecanik instance';
+				dol_syslog(__METHOD__.' '.$this->error, LOG_ERR);
+				return false;
+			}
+			foreach ($ips as $ip) {
+				if (!self::isPublicIp($ip)) {
+					$this->error = 'Refused to call the Webmecanik instance: its host name resolves to a private or reserved IP address';
+					dol_syslog(__METHOD__.' '.$this->error.' ('.$ip.')', LOG_ERR);
+					return false;
+				}
+			}
+			$pinnedIp = $ips[0];
+		}
+
 		$buffer = '';
 		$max = self::MAX_RESPONSE_SIZE;
 		$ch = curl_init();
@@ -219,8 +343,18 @@ class MarkAutoMecanikWebmecanikClient
 		}
 		curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
 		curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
-		curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 10);
-		curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+		curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $this->connectTimeout);
+		curl_setopt($ch, CURLOPT_TIMEOUT, $this->timeout);
+		if ($useProxy) {
+			// Outgoing proxy configured in Dolibarr (Setup > Security > Proxy)
+			curl_setopt($ch, CURLOPT_PROXY, getDolGlobalString('MAIN_PROXY_HOST').(getDolGlobalInt('MAIN_PROXY_PORT') ? ':'.getDolGlobalInt('MAIN_PROXY_PORT') : ''));
+			curl_setopt($ch, CURLOPT_HTTPPROXYTUNNEL, true);
+			if (getDolGlobalString('MAIN_PROXY_USER') !== '') {
+				curl_setopt($ch, CURLOPT_PROXYUSERPWD, getDolGlobalString('MAIN_PROXY_USER').':'.getDolGlobalString('MAIN_PROXY_PASS'));
+			}
+		} elseif ($pinnedIp !== '' && defined('CURLOPT_RESOLVE')) {
+			curl_setopt($ch, CURLOPT_RESOLVE, array($host.':'.$port.':'.(strpos($pinnedIp, ':') !== false ? '['.$pinnedIp.']' : $pinnedIp)));
+		}
 		curl_setopt($ch, CURLOPT_USERAGENT, 'Dolibarr-MarkAutoMecanik/1.0');
 		curl_setopt($ch, CURLOPT_ENCODING, '');
 		if ($body !== null) {
@@ -252,8 +386,9 @@ class MarkAutoMecanikWebmecanikClient
 		$this->lastHttpCode = $code;
 		$path = (string) parse_url($url, PHP_URL_PATH);
 		if ($ok === false || $errno) {
-			$this->error = 'Network error when calling Webmecanik (cURL #'.$errno.': '.$errmsg.')';
-			dol_syslog(__METHOD__.' '.$method.' '.$path.' '.$this->error, LOG_ERR);
+			// Details (which could help probing internal hosts) go to the logs only
+			$this->error = 'Network error when calling Webmecanik, see the Dolibarr logs for details';
+			dol_syslog(__METHOD__.' '.$method.' '.$path.' network error (cURL #'.$errno.': '.$errmsg.')', LOG_ERR);
 			return false;
 		}
 		// Only the path, the HTTP code and the size are logged: never the query, the body or the response
@@ -448,6 +583,34 @@ class MarkAutoMecanikWebmecanikClient
 			return null;
 		}
 		return $res['contact'];
+	}
+
+	/**
+	 * Aliases of the segments a contact belongs to
+	 *
+	 * @param int $id Contact id
+	 * @return string[]|null null on error
+	 */
+	public function getContactSegmentAliases($id)
+	{
+		$id = (int) $id;
+		if ($id <= 0) {
+			$this->error = 'Invalid contact id';
+			return null;
+		}
+		$res = $this->request('GET', '/api/contacts/'.$id.'/segments');
+		if ($res === null) {
+			return null;
+		}
+		$aliases = array();
+		if (!empty($res['lists']) && is_array($res['lists'])) {
+			foreach ($res['lists'] as $list) {
+				if (is_array($list) && isset($list['alias']) && is_scalar($list['alias'])) {
+					$aliases[] = (string) $list['alias'];
+				}
+			}
+		}
+		return $aliases;
 	}
 
 	/**

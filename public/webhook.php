@@ -27,7 +27,9 @@
  *   compared in constant time;
  * - the payload is only used to extract contact ids: contact data are then read back from the
  *   Webmecanik API with the configured credentials, so a forged or replayed payload cannot inject data;
- * - the number of contacts processed per call is limited.
+ * - the number of contacts processed per call is limited;
+ * - invalid signatures are rate limited per IP address (429 after 20 failures in 10 minutes);
+ * - the segment filter of the module setup applies to the contacts notified by the webhook.
  */
 
 if (!defined('NOLOGIN')) {
@@ -68,6 +70,39 @@ if ($entity > 0) {
 const MARKAUTOMECANIK_WEBHOOK_MAX_BODY = 1048576;
 /** Maximum number of contacts processed per call */
 const MARKAUTOMECANIK_WEBHOOK_MAX_CONTACTS = 50;
+/** Invalid signatures accepted per IP address and per window before answering 429 */
+const MARKAUTOMECANIK_WEBHOOK_MAX_FAILURES = 20;
+/** Duration of the rate limiting window (seconds) */
+const MARKAUTOMECANIK_WEBHOOK_FAILURE_WINDOW = 600;
+
+/**
+ * Counter of invalid signatures of an IP address, kept in a small file of the module temp directory
+ *
+ * @param string $dir       Directory
+ * @param string $ip        Remote IP address
+ * @param bool   $increment true to count a new failure
+ * @return int Number of failures in the current window
+ */
+function markautomecanikWebhookFailures($dir, $ip, $increment)
+{
+	if ($dir === '' || (!is_dir($dir) && !@mkdir($dir, 0700, true))) {
+		return 0;
+	}
+	$file = $dir.'/webhook-failures-'.hash('sha256', (string) $ip).'.txt';
+	$now = time();
+	$start = $now;
+	$count = 0;
+	$content = @file_get_contents($file);
+	if (is_string($content) && preg_match('/^(\d+):(\d+)$/', $content, $reg) && (int) $reg[1] > $now - MARKAUTOMECANIK_WEBHOOK_FAILURE_WINDOW) {
+		$start = (int) $reg[1];
+		$count = (int) $reg[2];
+	}
+	if ($increment) {
+		$count++;
+		@file_put_contents($file, $start.':'.$count, LOCK_EX);
+	}
+	return $count;
+}
 
 /**
  * Send a JSON response and stop
@@ -139,6 +174,13 @@ if ($secret === '') {
 	markautomecanikWebhookRespond(503, array('error' => 'Not configured'));
 }
 
+// Rate limiting of the invalid signatures per IP address (guessing the secret online)
+$failureDir = (!empty($conf->markautomecanik->dir_temp) ? $conf->markautomecanik->dir_temp : DOL_DATA_ROOT.'/markautomecanik/temp');
+if (markautomecanikWebhookFailures($failureDir, $remote, false) >= MARKAUTOMECANIK_WEBHOOK_MAX_FAILURES) {
+	header('Retry-After: '.MARKAUTOMECANIK_WEBHOOK_FAILURE_WINDOW);
+	markautomecanikWebhookRespond(429, array('error' => 'Too many requests'));
+}
+
 // Read the raw body with a hard size limit (Content-Length may be absent with chunked encoding)
 $raw = (string) file_get_contents('php://input', false, null, 0, MARKAUTOMECANIK_WEBHOOK_MAX_BODY + 1);
 if (strlen($raw) > MARKAUTOMECANIK_WEBHOOK_MAX_BODY) {
@@ -149,8 +191,15 @@ if (strlen($raw) > MARKAUTOMECANIK_WEBHOOK_MAX_BODY) {
 $signature = isset($_SERVER['HTTP_WEBHOOK_SIGNATURE']) ? trim((string) $_SERVER['HTTP_WEBHOOK_SIGNATURE']) : '';
 $expected = base64_encode(hash_hmac('sha256', $raw, $secret, true));
 if ($signature === '' || !hash_equals($expected, $signature)) {
-	dol_syslog('markautomecanik webhook: invalid signature from '.$remote, LOG_WARNING);
+	$failures = markautomecanikWebhookFailures($failureDir, $remote, true);
+	// One log line per window and per address, not one per request
+	if ($failures === 1 || $failures === MARKAUTOMECANIK_WEBHOOK_MAX_FAILURES) {
+		dol_syslog('markautomecanik webhook: invalid signature from '.$remote.' ('.$failures.' in the current window)', LOG_WARNING);
+	}
 	markautomecanikWebhookRespond(401, array('error' => 'Invalid signature'));
+}
+if (strlen($secret) < 32) {
+	dol_syslog('markautomecanik webhook: the webhook secret is shorter than 32 characters, generate a new one in the module setup', LOG_WARNING);
 }
 
 $payload = json_decode($raw, true, 32);
@@ -190,6 +239,8 @@ if (getDolGlobalInt('MARKAUTOMECANIK_WEBHOOK_USER') > 0) {
 }
 
 $sync = new MarkAutoMecanikSync($db);
+// Synchronous processing: short timeouts so that Webmecanik does not wait for minutes
+$sync->getClient()->setTimeouts(5, 15);
 $result = $sync->synchronizeContactIds($ids, $webhookUser);
 dol_syslog('markautomecanik webhook from '.$remote.': '.$sync->output, ($result < 0 ? LOG_WARNING : LOG_INFO));
 

@@ -67,7 +67,10 @@ $action = GETPOST('action', 'aZ09');
  * Actions
  */
 
-if (in_array($action, array('update', 'test', 'sync', 'resetwindow'), true)) {
+/** Minimum length of the webhook secret */
+const MARKAUTOMECANIK_WEBHOOK_SECRET_MINLENGTH = 32;
+
+if (in_array($action, array('update', 'test', 'sync', 'resetwindow', 'optoutremove'), true)) {
 	markautomecanikRequirePost();
 	markautomecanikCheckToken();
 }
@@ -98,11 +101,23 @@ if ($action === 'update') {
 				$error++;
 				continue;
 			}
+			// A short webhook secret could be guessed online
+			if ($secretName === 'MARKAUTOMECANIK_WEBHOOK_SECRET' && strlen($secret) < MARKAUTOMECANIK_WEBHOOK_SECRET_MINLENGTH) {
+				setEventMessages($langs->trans('ErrorWebhookSecretTooShort', MARKAUTOMECANIK_WEBHOOK_SECRET_MINLENGTH), null, 'errors');
+				$error++;
+				continue;
+			}
 			dolibarr_set_const($db, $secretName, MarkAutoMecanikWebmecanikClient::encryptSecret($secret), 'chaine', 0, '', $entity);
 		}
 		if (GETPOST('clear_'.$secretName, 'int')) {
 			dolibarr_del_const($db, $secretName, $entity);
 		}
+	}
+	// Generation of a strong webhook secret, displayed once
+	if (GETPOST('generate_webhook_secret', 'int')) {
+		$generated = bin2hex(random_bytes(32));
+		dolibarr_set_const($db, 'MARKAUTOMECANIK_WEBHOOK_SECRET', MarkAutoMecanikWebmecanikClient::encryptSecret($generated), 'chaine', 0, '', $entity);
+		setEventMessages($langs->trans('WebhookSecretGenerated', $generated), null, 'warnings');
 	}
 
 	// Import
@@ -122,6 +137,8 @@ if ($action === 'update') {
 	dolibarr_set_const($db, 'MARKAUTOMECANIK_SLA_DAYS', min(365, max(0, GETPOSTINT('MARKAUTOMECANIK_SLA_DAYS'))), 'chaine', 0, '', $entity);
 	dolibarr_set_const($db, 'MARKAUTOMECANIK_REMIND_MAX_AGE_MONTHS', min(60, max(1, GETPOSTINT('MARKAUTOMECANIK_REMIND_MAX_AGE_MONTHS'))), 'chaine', 0, '', $entity);
 	dolibarr_set_const($db, 'MARKAUTOMECANIK_RETENTION_MONTHS', min(240, max(0, GETPOSTINT('MARKAUTOMECANIK_RETENTION_MONTHS'))), 'chaine', 0, '', $entity);
+	dolibarr_set_const($db, 'MARKAUTOMECANIK_ANONYMIZE_COMPANY', GETPOST('MARKAUTOMECANIK_ANONYMIZE_COMPANY', 'int') ? 1 : 0, 'chaine', 0, '', $entity);
+	dolibarr_set_const($db, 'MARKAUTOMECANIK_ALLOW_PRIVATE_IP', GETPOST('MARKAUTOMECANIK_ALLOW_PRIVATE_IP', 'int') ? 1 : 0, 'chaine', 0, '', $entity);
 	$alertEmail = trim(GETPOST('MARKAUTOMECANIK_ALERT_EMAIL', 'alphanohtml'));
 	if ($alertEmail !== '' && !isValidEmail($alertEmail)) {
 		setEventMessages($langs->trans('ErrorBadEMail', dol_escape_htmltag($alertEmail)), null, 'errors');
@@ -140,7 +157,7 @@ if ($action === 'update') {
 		dolibarr_set_const($db, 'MARKAUTOMECANIK_TAG_PREFIX', $prefix, 'chaine', 0, '', $entity);
 	}
 	$webhook = GETPOST('MARKAUTOMECANIK_WEBHOOK_ENABLED', 'int') ? 1 : 0;
-	if ($webhook && getDolGlobalString('MARKAUTOMECANIK_WEBHOOK_SECRET') === '' && trim((string) GETPOST('MARKAUTOMECANIK_WEBHOOK_SECRET', 'none')) === '') {
+	if ($webhook && getDolGlobalString('MARKAUTOMECANIK_WEBHOOK_SECRET') === '') {
 		setEventMessages($langs->trans('ErrorWebhookSecretRequired'), null, 'errors');
 		$webhook = 0;
 		$error++;
@@ -181,6 +198,24 @@ if ($action === 'sync') {
 	exit;
 }
 
+// GDPR: the person gave a new consent, the contact can be imported again
+if ($action === 'optoutremove') {
+	$optoutEmail = strtolower(trim(GETPOST('optout_email', 'alphanohtml')));
+	if ($optoutEmail === '' || !isValidEmail($optoutEmail)) {
+		setEventMessages($langs->trans('ErrorBadEMail', dol_escape_htmltag($optoutEmail)), null, 'errors');
+	} else {
+		$lead = new MarkAutoMecanikLead($db);
+		$nb = $lead->removeFromOptOut($optoutEmail);
+		if ($nb < 0) {
+			setEventMessages($lead->error, null, 'errors');
+		} else {
+			setEventMessages($langs->trans($nb > 0 ? 'OptOutRemoved' : 'OptOutNotFound'), null, ($nb > 0 ? 'mesgs' : 'warnings'));
+		}
+	}
+	header('Location: '.$_SERVER['PHP_SELF']);
+	exit;
+}
+
 if ($action === 'resetwindow') {
 	dolibarr_del_const($db, 'MARKAUTOMECANIK_LAST_SYNC', $conf->entity);
 	dolibarr_set_const($db, 'MARKAUTOMECANIK_SYNC_LOCK', '0', 'chaine', 0, '', $conf->entity);
@@ -208,6 +243,32 @@ print '<span class="opacitymedium">'.$langs->trans('MarkAutoMecanikSetupPage').'
 if (!function_exists('curl_init')) {
 	print info_admin($langs->trans('ErrorCurlMissing'), 0, 0, 'error');
 }
+
+// Secrets: dolEncrypt() silently stores them in clear when openssl or the instance unique id is missing
+if (!function_exists('openssl_encrypt') || empty($conf->file->instance_unique_id)) {
+	print info_admin($langs->trans('WarningEncryptionUnavailable'), 0, 0, 'error');
+}
+$clearSecrets = array();
+$sql = 'SELECT name, value FROM '.MAIN_DB_PREFIX.'const';
+$sql .= " WHERE name IN ('MARKAUTOMECANIK_WM_CLIENT_SECRET', 'MARKAUTOMECANIK_WM_BASIC_PASSWORD', 'MARKAUTOMECANIK_WEBHOOK_SECRET')";
+$sql .= ' AND entity = '.((int) $conf->entity);
+$resql = $db->query($sql);
+if ($resql) {
+	while ($obj = $db->fetch_object($resql)) {
+		if ((string) $obj->value !== '' && strpos((string) $obj->value, 'dolcrypt:') !== 0) {
+			$clearSecrets[] = $obj->name;
+		}
+	}
+	$db->free($resql);
+}
+if (!empty($clearSecrets)) {
+	print info_admin($langs->trans('WarningSecretsNotEncrypted', implode(', ', $clearSecrets)), 0, 0, 'warning');
+}
+$webhookSecret = MarkAutoMecanikWebmecanikClient::decryptSecret(getDolGlobalString('MARKAUTOMECANIK_WEBHOOK_SECRET'));
+if ($webhookSecret !== '' && strlen($webhookSecret) < MARKAUTOMECANIK_WEBHOOK_SECRET_MINLENGTH) {
+	print info_admin($langs->trans('WarningWebhookSecretTooShort', MARKAUTOMECANIK_WEBHOOK_SECRET_MINLENGTH), 0, 0, 'warning');
+}
+unset($webhookSecret);
 
 /**
  * Print a setup row
@@ -259,6 +320,7 @@ markautomecanikSetupRow($langs->trans('OAuth2ClientId'), '<input type="text" nam
 markautomecanikSetupRow($langs->trans('OAuth2ClientSecret'), markautomecanikSecretInput('MARKAUTOMECANIK_WM_CLIENT_SECRET'));
 markautomecanikSetupRow($langs->trans('BasicUser'), '<input type="text" name="MARKAUTOMECANIK_WM_BASIC_USER" class="minwidth300" autocomplete="off" value="'.dol_escape_htmltag(getDolGlobalString('MARKAUTOMECANIK_WM_BASIC_USER')).'">');
 markautomecanikSetupRow($langs->trans('BasicPassword'), markautomecanikSecretInput('MARKAUTOMECANIK_WM_BASIC_PASSWORD'));
+markautomecanikSetupRow($langs->trans('AllowPrivateIp'), '<input type="checkbox" name="MARKAUTOMECANIK_ALLOW_PRIVATE_IP" value="1"'.(getDolGlobalInt('MARKAUTOMECANIK_ALLOW_PRIVATE_IP') ? ' checked' : '').'>', $langs->trans('AllowPrivateIpHelp'));
 
 // Import
 print '<tr class="liste_titre"><td colspan="2">'.img_picto('', 'download', 'class="pictofixedwidth"').$langs->trans('ImportRules').'</td></tr>';
@@ -275,6 +337,7 @@ markautomecanikSetupRow($langs->trans('SlaDays'), '<input type="number" min="0" 
 markautomecanikSetupRow($langs->trans('AlertEmail'), '<input type="email" name="MARKAUTOMECANIK_ALERT_EMAIL" class="minwidth300" value="'.dol_escape_htmltag(getDolGlobalString('MARKAUTOMECANIK_ALERT_EMAIL')).'">', $langs->trans('AlertEmailHelp'));
 markautomecanikSetupRow($langs->trans('RemindMaxAgeMonths'), '<input type="number" min="1" max="60" name="MARKAUTOMECANIK_REMIND_MAX_AGE_MONTHS" class="width75" value="'.getDolGlobalInt('MARKAUTOMECANIK_REMIND_MAX_AGE_MONTHS', 3).'">', $langs->trans('RemindMaxAgeMonthsHelp'));
 markautomecanikSetupRow($langs->trans('RetentionMonths'), '<input type="number" min="0" max="240" name="MARKAUTOMECANIK_RETENTION_MONTHS" class="width75" value="'.getDolGlobalInt('MARKAUTOMECANIK_RETENTION_MONTHS').'">', $langs->trans('RetentionMonthsHelp'));
+markautomecanikSetupRow($langs->trans('AnonymizeCompany'), '<input type="checkbox" name="MARKAUTOMECANIK_ANONYMIZE_COMPANY" value="1"'.(getDolGlobalInt('MARKAUTOMECANIK_ANONYMIZE_COMPANY') ? ' checked' : '').'>', $langs->trans('AnonymizeCompanyHelp'));
 
 // Closed loop
 print '<tr class="liste_titre"><td colspan="2">'.img_picto('', 'refresh', 'class="pictofixedwidth"').$langs->trans('ClosedLoop').'</td></tr>';
@@ -286,7 +349,9 @@ $webhookUrl = dol_buildpath('/markautomecanik/public/webhook.php', 2).'?entity='
 print '<tr class="liste_titre"><td colspan="2">'.img_picto('', 'technic', 'class="pictofixedwidth"').$langs->trans('Webhook').'</td></tr>';
 markautomecanikSetupRow($langs->trans('WebhookEnabled'), '<input type="checkbox" name="MARKAUTOMECANIK_WEBHOOK_ENABLED" value="1"'.(getDolGlobalInt('MARKAUTOMECANIK_WEBHOOK_ENABLED') ? ' checked' : '').'>', $langs->trans('WebhookEnabledHelp'));
 markautomecanikSetupRow($langs->trans('WebhookUrl'), '<input type="text" readonly class="minwidth500" value="'.dol_escape_htmltag($webhookUrl).'">', $langs->trans('WebhookUrlHelp'));
-markautomecanikSetupRow($langs->trans('WebhookSecret'), markautomecanikSecretInput('MARKAUTOMECANIK_WEBHOOK_SECRET'), $langs->trans('WebhookSecretHelp'));
+$html = markautomecanikSecretInput('MARKAUTOMECANIK_WEBHOOK_SECRET');
+$html .= ' <label class="nowraponall"><input type="checkbox" name="generate_webhook_secret" value="1"> '.$langs->trans('GenerateWebhookSecret').'</label>';
+markautomecanikSetupRow($langs->trans('WebhookSecret'), $html, $langs->trans('WebhookSecretHelp', MARKAUTOMECANIK_WEBHOOK_SECRET_MINLENGTH));
 markautomecanikSetupRow($langs->trans('WebhookUser'), $form->select_dolusers(getDolGlobalInt('MARKAUTOMECANIK_WEBHOOK_USER'), 'MARKAUTOMECANIK_WEBHOOK_USER', 1, null, 0, '', '', '0', 0, 0, '', 0, '', 'minwidth200', 1), $langs->trans('WebhookUserHelp'));
 
 print '</table></div>';
@@ -312,6 +377,11 @@ markautomecanikSetupRow($langs->trans('SynchronizeNow'), $html, $langs->trans('S
 $html = '<form class="inline-block" method="POST" action="'.$_SERVER['PHP_SELF'].'"><input type="hidden" name="token" value="'.newToken().'"><input type="hidden" name="action" value="resetwindow">';
 $html .= '<input type="submit" class="button button-cancel smallpaddingimp" value="'.dol_escape_htmltag($langs->trans('ResetSyncWindow')).'"></form>';
 markautomecanikSetupRow($langs->trans('ResetSyncWindow'), $html, $langs->trans('ResetSyncWindowHelp'));
+
+$html = '<form class="inline-block" method="POST" action="'.$_SERVER['PHP_SELF'].'"><input type="hidden" name="token" value="'.newToken().'"><input type="hidden" name="action" value="optoutremove">';
+$html .= '<input type="email" name="optout_email" class="minwidth250" autocomplete="off" placeholder="'.dol_escape_htmltag($langs->trans('Email')).'"> ';
+$html .= '<input type="submit" class="button smallpaddingimp" value="'.dol_escape_htmltag($langs->trans('OptOutRemove')).'"></form>';
+markautomecanikSetupRow($langs->trans('OptOutRemove'), $html, $langs->trans('OptOutRemoveHelp'));
 
 $html = '<a href="'.DOL_URL_ROOT.'/cron/list.php?search_label='.urlencode('Webmecanik').'">'.$langs->trans('ScheduledJobs').'</a>';
 markautomecanikSetupRow($langs->trans('ScheduledJobs'), $html, $langs->trans('ScheduledJobsHelp'));

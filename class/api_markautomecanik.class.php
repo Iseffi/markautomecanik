@@ -91,6 +91,17 @@ class Markautomecanik extends DolibarrApi
 		foreach (self::READABLE_FIELDS as $field) {
 			$out[$field] = $lead->$field;
 		}
+		// Links to records the user is not allowed to see are not disclosed
+		$apiUser = DolibarrApiAccess::$user;
+		if ($out['fk_soc'] > 0 && !MarkAutoMecanikLead::userCanReadThirdparty($this->db, $apiUser, $out['fk_soc'])) {
+			$out['fk_soc'] = null;
+		}
+		if ($out['fk_socpeople'] > 0 && !MarkAutoMecanikLead::userCanReadContact($this->db, $apiUser, $out['fk_socpeople'])) {
+			$out['fk_socpeople'] = null;
+		}
+		if ($out['fk_project'] > 0 && MarkAutoMecanikLead::fetchProjectIfReadable($this->db, $apiUser, $out['fk_project']) === null) {
+			$out['fk_project'] = null;
+		}
 		$out['status_label'] = MarkAutoMecanikLead::getStatusLabels()[(int) $lead->status] ?? '';
 		return $out;
 	}
@@ -178,14 +189,18 @@ class Markautomecanik extends DolibarrApi
 		$lead = new MarkAutoMecanikLead($this->db);
 		foreach (self::WRITABLE_FIELDS as $field) {
 			if (isset($request_data[$field]) && is_scalar($request_data[$field])) {
-				$lead->$field = MarkAutoMecanikLead::cleanText($request_data[$field], MarkAutoMecanikLead::MAXLENGTHS[$field]);
+				if ($field === 'email') {
+					// Validated before cleaning, which would silently empty an unsafe email
+					$email = strtolower(MarkAutoMecanikLead::cleanText($request_data[$field], MarkAutoMecanikLead::MAXLENGTHS['email']));
+					if ($email !== '' && !MarkAutoMecanikLead::isSafeEmail($email)) {
+						throw new RestException(400, 'Invalid email');
+					}
+				}
+				$lead->$field = MarkAutoMecanikLead::cleanField($field, $request_data[$field]);
 			}
 		}
 		if (trim((string) $lead->lastname) === '' && trim((string) $lead->company) === '') {
 			throw new RestException(400, 'Field lastname or company is required');
-		}
-		if (!empty($lead->email) && !isValidEmail($lead->email)) {
-			throw new RestException(400, 'Invalid email');
 		}
 		if (!empty($lead->website) && !preg_match('#^https?://#i', $lead->website)) {
 			throw new RestException(400, 'Invalid website URL');

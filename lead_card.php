@@ -157,7 +157,7 @@ function markautomecanikValidateIdentity($lead)
 	if (trim($lead->lastname) === '' && trim($lead->company) === '') {
 		$errors[] = $langs->trans('ErrorLastnameOrCompanyRequired');
 	}
-	if ($lead->email !== '' && !isValidEmail($lead->email)) {
+	if ($lead->email !== '' && !MarkAutoMecanikLead::isSafeEmail(strtolower($lead->email))) {
 		$errors[] = $langs->trans('ErrorBadEMail', dol_escape_htmltag($lead->email));
 	}
 	if ($lead->website !== '' && !preg_match('#^https?://#i', $lead->website)) {
@@ -305,7 +305,7 @@ if (empty($reshook)) {
 			$outlangs->loadLangs(array('main', 'markautomecanik@markautomecanik'));
 			$subject = $outlangs->transnoentities('NotifySubject', $object->id);
 			$body = $outlangs->transnoentities('NotifyBody', $user->getFullName($outlangs))."\n\n";
-			$body .= $outlangs->transnoentities('Company').' : '.$object->company."\n";
+			$body .= $outlangs->transnoentities('Company').' : '.MarkAutoMecanikLead::oneLine($object->company)."\n";
 			$body .= $outlangs->transnoentities('Link').' : '.dol_buildpath('/markautomecanik/lead_card.php', 2).'?id='.((int) $object->id)."\n";
 			$mail = new CMailFile($subject, $rep->email, $from, $body, array(), array(), array(), '', '', 0, 0, '', '', 'mamlead'.$object->id);
 			if ($mail->sendfile()) {
@@ -351,12 +351,11 @@ if (empty($reshook)) {
 
 	// Link to a project / opportunity created from the lead
 	if ($action === 'confirm_linkproject' && $confirm === 'yes' && isModEnabled('project')) {
-		require_once DOL_DOCUMENT_ROOT.'/projet/class/project.class.php';
-		$project = new Project($db);
 		$projectid = GETPOSTINT('projectid');
-		if ($projectid > 0 && $project->fetch($projectid) > 0 && in_array((int) $project->entity, array_map('intval', explode(',', getEntity('project'))), true)) {
+		$project = MarkAutoMecanikLead::fetchProjectIfReadable($db, $user, $projectid);
+		if ($project !== null) {
 			$object->fk_project = $projectid;
-			if (empty($object->fk_soc) && $project->socid > 0) {
+			if (empty($object->fk_soc) && $project->socid > 0 && MarkAutoMecanikLead::userCanReadThirdparty($db, $user, $project->socid)) {
 				$object->fk_soc = (int) $project->socid;
 			}
 			if ($object->update($user) > 0 && (int) $object->status !== MarkAutoMecanikLead::STATUS_CONVERTED) {
@@ -398,7 +397,9 @@ if (empty($reshook)) {
 
 	// Deletion
 	if ($action === 'confirm_delete' && $confirm === 'yes') {
-		if ($object->delete($user) > 0) {
+		// The checkbox of formconfirm() sends "on" when checked, an empty value otherwise
+		$blockReimport = !in_array(GETPOST('block_reimport', 'alpha'), array('', '0', 'false'), true);
+		if ($object->delete($user, false, $blockReimport) > 0) {
 			setEventMessages($langs->trans('RecordDeleted'), null, 'mesgs');
 			header('Location: '.dol_buildpath('/markautomecanik/lead_list.php', 1).'?restore_lastsearch_values=1');
 			exit;
@@ -499,7 +500,11 @@ print dol_get_fiche_head($head, 'card', $langs->trans('MarketingLead'), -1, $obj
 // Confirmation dialogs
 $formconfirm = '';
 if ($action === 'delete' && $permissiontodelete) {
-	$formconfirm = $form->formconfirm($_SERVER['PHP_SELF'].'?id='.$object->id, $langs->trans('DeleteLead'), $langs->trans('ConfirmDeleteLead'), 'confirm_delete', '', 0, 1);
+	$formquestion = array();
+	if (!empty($object->email) || $object->wm_contact_id > 0) {
+		$formquestion[] = array('type' => 'checkbox', 'name' => 'block_reimport', 'label' => $langs->trans('BlockReimport'), 'value' => 0);
+	}
+	$formconfirm = $form->formconfirm($_SERVER['PHP_SELF'].'?id='.$object->id, $langs->trans('DeleteLead'), $langs->trans('ConfirmDeleteLead'), 'confirm_delete', $formquestion, 0, 1);
 }
 if ($action === 'anonymize' && $permissiontodelete) {
 	$formconfirm = $form->formconfirm($_SERVER['PHP_SELF'].'?id='.$object->id, $langs->trans('AnonymizeLead'), $langs->trans('ConfirmAnonymizeLead'), 'confirm_anonymize', '', 0, 1);
@@ -509,16 +514,15 @@ if ($action === 'notify' && $permissiontoadd) {
 }
 // Return from the thirdparty creation page: confirmation before linking (the token of the
 // back URL cannot be trusted after a round trip, so the link is confirmed by the user)
-if ($action === 'confirmlinksoc' && $permissiontoadd && GETPOSTINT('socid') > 0) {
+if ($action === 'confirmlinksoc' && $permissiontoadd && GETPOSTINT('socid') > 0 && MarkAutoMecanikLead::userCanReadThirdparty($db, $user, GETPOSTINT('socid'))) {
 	$soc = new Societe($db);
 	if ($soc->fetch(GETPOSTINT('socid')) > 0) {
 		$formconfirm = $form->formconfirm($_SERVER['PHP_SELF'].'?id='.$object->id.'&socid='.((int) $soc->id), $langs->trans('LinkToThirdparty'), $langs->trans('ConfirmLinkToThirdparty', dol_escape_htmltag($soc->name)), 'confirm_linksoc', '', 'yes', 1);
 	}
 }
 if ($action === 'confirmlinkproject' && $permissiontoadd && GETPOSTINT('projectid') > 0 && isModEnabled('project')) {
-	require_once DOL_DOCUMENT_ROOT.'/projet/class/project.class.php';
-	$project = new Project($db);
-	if ($project->fetch(GETPOSTINT('projectid')) > 0) {
+	$project = MarkAutoMecanikLead::fetchProjectIfReadable($db, $user, GETPOSTINT('projectid'));
+	if ($project !== null) {
 		$formconfirm = $form->formconfirm($_SERVER['PHP_SELF'].'?id='.$object->id.'&projectid='.((int) $project->id), $langs->trans('LinkToProject'), $langs->trans('ConfirmLinkToProject', dol_escape_htmltag($project->ref)), 'confirm_linkproject', '', 'yes', 1);
 	}
 }
@@ -551,9 +555,8 @@ if ($action === 'edit') {
 	print '</form>';
 } else {
 	print '<table class="border centpercent tableforfield">';
-	$email = $object->email ? dol_print_email($object->email, 0, 0, 1) : '';
-	markautomecanikPrintRow($langs->trans('Email'), $email);
-	markautomecanikPrintRow($langs->trans('Phone'), $object->phone ? dol_print_phone($object->phone, '', 0, 0, 'AC_TEL') : '');
+	markautomecanikPrintRow($langs->trans('Email'), markautomecanikEmailHtml($object->email));
+	markautomecanikPrintRow($langs->trans('Phone'), markautomecanikPhoneHtml($object->phone));
 	markautomecanikPrintRow($langs->trans('Company'), dol_escape_htmltag($object->company));
 	markautomecanikPrintRow($langs->trans('Town'), dol_escape_htmltag(trim($object->city.($object->country ? ' ('.$object->country.')' : ''))));
 	markautomecanikPrintRow($langs->trans('Language'), dol_escape_htmltag($object->lang));
@@ -592,17 +595,23 @@ if ($object->wm_contact_id > 0) {
 	markautomecanikPrintRow($langs->trans('WebmecanikDateModified'), dol_print_date($object->wm_date_modified, 'dayhour', 'tzuser'));
 }
 
+// Linked records are displayed only if the user is allowed to see them
+$notVisible = '<span class="opacitymedium">'.$langs->trans('LinkedRecordNotVisible').'</span>';
+$socVisible = ($object->fk_soc > 0 && MarkAutoMecanikLead::userCanReadThirdparty($db, $user, $object->fk_soc));
+
 // Thirdparty
 $html = '';
 if ($object->fk_soc > 0) {
 	$soc = new Societe($db);
-	if ($soc->fetch($object->fk_soc) > 0) {
+	if ($socVisible && $soc->fetch($object->fk_soc) > 0) {
 		$html = $soc->getNomUrl(1);
-		if ($permissiontoadd && empty($object->date_anonymized)) {
-			$html .= ' <form class="inline-block" method="POST" action="'.$_SERVER['PHP_SELF'].'?id='.((int) $object->id).'">';
-			$html .= '<input type="hidden" name="token" value="'.newToken().'"><input type="hidden" name="action" value="unlinksoc">';
-			$html .= '<button type="submit" class="buttonreset" title="'.dol_escape_htmltag($langs->trans('Unlink')).'">'.img_picto($langs->trans('Unlink'), 'unlink').'</button></form>';
-		}
+	} else {
+		$html = $notVisible;
+	}
+	if ($permissiontoadd && empty($object->date_anonymized)) {
+		$html .= ' <form class="inline-block" method="POST" action="'.$_SERVER['PHP_SELF'].'?id='.((int) $object->id).'">';
+		$html .= '<input type="hidden" name="token" value="'.newToken().'"><input type="hidden" name="action" value="unlinksoc">';
+		$html .= '<button type="submit" class="buttonreset" title="'.dol_escape_htmltag($langs->trans('Unlink')).'">'.img_picto($langs->trans('Unlink'), 'unlink').'</button></form>';
 	}
 } elseif ($permissiontoadd && empty($object->date_anonymized)) {
 	$html = '<form method="POST" action="'.$_SERVER['PHP_SELF'].'?id='.((int) $object->id).'">';
@@ -617,10 +626,12 @@ markautomecanikPrintRow($langs->trans('ThirdParty'), $html);
 $html = '';
 if ($object->fk_socpeople > 0) {
 	$contact = new Contact($db);
-	if ($contact->fetch($object->fk_socpeople) > 0) {
+	if (MarkAutoMecanikLead::userCanReadContact($db, $user, $object->fk_socpeople) && $contact->fetch($object->fk_socpeople) > 0) {
 		$html = $contact->getNomUrl(1);
+	} else {
+		$html = $notVisible;
 	}
-} elseif ($object->fk_soc > 0 && $permissiontoadd && empty($object->date_anonymized)) {
+} elseif ($socVisible && $permissiontoadd && empty($object->date_anonymized)) {
 	$html = '<form method="POST" action="'.$_SERVER['PHP_SELF'].'?id='.((int) $object->id).'">';
 	$html .= '<input type="hidden" name="token" value="'.newToken().'"><input type="hidden" name="action" value="linkcontact">';
 	$html .= $form->selectcontacts($object->fk_soc, '', 'contactid', 1, '', '', 0, 'minwidth200 maxwidth300');
@@ -631,11 +642,8 @@ markautomecanikPrintRow($langs->trans('Contact'), $html);
 
 // Project / opportunity
 if (isModEnabled('project') && $object->fk_project > 0) {
-	require_once DOL_DOCUMENT_ROOT.'/projet/class/project.class.php';
-	$project = new Project($db);
-	if ($project->fetch($object->fk_project) > 0) {
-		markautomecanikPrintRow($langs->trans('Project'), $project->getNomUrl(1));
-	}
+	$project = MarkAutoMecanikLead::fetchProjectIfReadable($db, $user, $object->fk_project);
+	markautomecanikPrintRow($langs->trans('Project'), ($project !== null ? $project->getNomUrl(1) : $notVisible));
 }
 
 markautomecanikPrintRow($langs->trans('DateStatus'), dol_print_date($object->date_status, 'dayhour', 'tzuser'));
@@ -710,7 +718,7 @@ if ($action !== 'edit') {
 		}
 
 		// Create a contact of the linked thirdparty
-		if ($object->fk_soc > 0 && empty($object->fk_socpeople) && $user->hasRight('societe', 'contact', 'creer')) {
+		if ($socVisible && empty($object->fk_socpeople) && $user->hasRight('societe', 'contact', 'creer')) {
 			$url = DOL_URL_ROOT.'/contact/card.php?action=create&socid='.((int) $object->fk_soc);
 			$url .= '&lastname='.urlencode((string) $object->lastname).'&firstname='.urlencode((string) $object->firstname);
 			$url .= '&email='.urlencode((string) $object->email).'&phone_pro='.urlencode((string) $object->phone);
@@ -719,7 +727,7 @@ if ($action !== 'edit') {
 		}
 
 		// Create an opportunity (project) from the lead
-		if (isModEnabled('project') && $object->fk_soc > 0 && empty($object->fk_project) && $user->hasRight('projet', 'creer')) {
+		if (isModEnabled('project') && $socVisible && empty($object->fk_project) && $user->hasRight('projet', 'creer')) {
 			$back = dol_buildpath('/markautomecanik/lead_card.php', 1).'?id='.((int) $object->id).'&action=confirmlinkproject&projectid=--IDFORBACKTOPAGE--';
 			$url = DOL_URL_ROOT.'/projet/card.php?action=create&socid='.((int) $object->fk_soc);
 			$url .= '&usage_opportunity=1&title='.urlencode($langs->transnoentities('OpportunityFromLead', $object->company ? $object->company : $object->getFullName()));
@@ -738,7 +746,7 @@ if ($action !== 'edit') {
 }
 
 // Last events of the linked thirdparty
-if ($action !== 'edit' && $object->fk_soc > 0 && isModEnabled('agenda') && ($user->hasRight('agenda', 'myactions', 'read') || $user->hasRight('agenda', 'allactions', 'read'))) {
+if ($action !== 'edit' && $socVisible && isModEnabled('agenda') && ($user->hasRight('agenda', 'myactions', 'read') || $user->hasRight('agenda', 'allactions', 'read'))) {
 	include_once DOL_DOCUMENT_ROOT.'/core/class/html.formactions.class.php';
 	$formactions = new FormActions($db);
 	$soc = new Societe($db);

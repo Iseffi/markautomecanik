@@ -32,7 +32,8 @@ Webmecanik as a tag to close the loop between marketing and sales.
 - **Closed loop**: lead status pushed to Webmecanik as tags (`dolibarr-converted`, `dolibarr-lost`, …).
 - **Reminders**: daily email to sales representatives for leads waiting beyond the processing delay,
   and summary of late unassigned leads to a shared address.
-- **GDPR**: one-click anonymisation and scheduled purge of unconverted leads after a retention period.
+- **GDPR**: one-click anonymisation (the contact is then never imported again) and scheduled purge of
+  unconverted leads after a retention period.
 - **Dashboard widget**, **statistics** (per month, status and sales representative, conversion rate)
   and **synchronisation history**.
 - **REST API** (`/api/index.php/markautomecanik/leads`) to read and create leads.
@@ -43,7 +44,7 @@ Webmecanik as a tag to close the loop between marketing and sales.
 | Component | Version |
 |-----------|---------|
 | Dolibarr  | 19.0 or later (tested with 19, 21, 22, 23 and 24) |
-| PHP       | 7.4 or higher (tested up to 8.5), with the `curl`, `json` and `openssl` extensions |
+| PHP       | 7.4 or higher (tested up to 8.5; 7.4 and 8.0 are no longer maintained by PHP, use 8.2 or later), with the `curl`, `json` and `openssl` extensions |
 | Database  | MySQL / MariaDB (PostgreSQL should work but is not tested) |
 | Webmecanik Automation | API enabled (Settings > Configuration > API settings) |
 
@@ -79,6 +80,11 @@ Then enable **Webmecanik marketing automation** in *Home > Setup > Modules* (CRM
 
 Use a dedicated API account with the least privileges required.
 
+> **OAuth2 and least privilege**: depending on the Mautic / Webmecanik version, OAuth2 *client
+> credentials* may not be attached to a restricted role and then give access to the whole API.
+> Check it with your Webmecanik administrator; if a restricted role cannot be attached to the client,
+> prefer basic authentication with a dedicated user restricted to *Contacts: view* (and *edit*).
+
 ### 2. Configure the module
 
 *Home > Setup > Modules > Webmecanik marketing automation* (gear icon):
@@ -93,8 +99,10 @@ Use a dedicated API account with the least privileges required.
 | Processing delay | days before a lead is flagged late and reminders are sent (0 = off) |
 | Alert email | receives the list of late unassigned leads |
 | Retention | months before unconverted leads are anonymised (0 = unlimited) |
+| Also erase the company | anonymisation also erases the company (personal data for sole traders) |
+| Allow a private IP address | only for an instance hosted on your internal network |
 | Push status as tag | closed loop with Webmecanik |
-| Webhook | optional real-time import |
+| Webhook | optional real-time import, secret of at least 32 characters |
 
 Click **Test connection**, then **Synchronise now** (use a window of e.g. 30 days for the initial import).
 
@@ -113,7 +121,8 @@ All jobs are created **disabled**: enable them once the connection works.
 
 ### 4. Optional: real-time webhook
 
-1. In the module setup, paste the secret and enable the webhook; copy the displayed URL.
+1. In the module setup, check *Generate a new secret* (or paste a secret of at least 32 characters)
+   and enable the webhook; copy the displayed secret and URL.
 2. In Webmecanik: *Settings > Webhooks > New*, paste the URL and the secret,
    select the events *Contact Updated Event* and *Contact Points Changed Event*.
 
@@ -158,8 +167,18 @@ for how to report a vulnerability. Highlights:
 - HTTPS enforced, certificates verified, redirects refused, response size and time bounded;
 - CSRF token and permission checked on every state-changing action, POST required for forms;
 - row-level visibility (own leads vs all leads) and multi-company isolation on every query;
-- all output escaped, all SQL values cast or escaped, sort fields white-listed;
-- HMAC-signed webhook with constant-time comparison; no personal data in logs.
+- third parties, contacts and projects linked to a lead shown and linked only within the Dolibarr
+  visibility rules of the user;
+- all input normalised (no HTML or line feed in single-line fields, strict email and phone formats),
+  all output escaped, all SQL values cast or escaped, sort fields white-listed;
+- outgoing calls through the Dolibarr proxy, to public IP addresses only;
+- HMAC-signed webhook with constant-time comparison and rate limiting; no personal data in logs
+  (except at the `LOG_DEBUG` level, where Dolibarr logs every SQL query).
+
+Encryption prerequisites: the PHP `openssl` extension and a non-empty
+`$dolibarr_main_instance_unique_id` in `conf.php` (keep this file read-only). Otherwise Dolibarr stores
+the secrets in clear, and the setup page displays an alert. The secrets are deleted when the module
+is disabled: they must be entered again after re-enabling it.
 
 ## Development
 
@@ -174,7 +193,9 @@ DOLIBARR_ROOT=/path/to/dolibarr/htdocs php test/unit_test.php
 ./build/build.sh
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md). Development files (`.github/`, `build/`, `test/`,
+`CONTRIBUTING.md`) are only in the git repository: they are excluded from the release archive
+(`export-ignore` in `.gitattributes`).
 
 ## Data model
 
@@ -182,8 +203,16 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 |-------|---------|
 | `llx_markautomecanik_lead` | marketing leads |
 | `llx_markautomecanik_synclog` | synchronisation history (no personal data) |
+| `llx_markautomecanik_optout` | GDPR opt-out list (salted hashes only) |
+| `llx_markautomecanik_lock` | short-lived import locks |
 
 Tables are kept when the module is disabled.
+
+## Upgrading
+
+After replacing the files, disable and re-enable the module to create the new tables (1.1.0: opt-out
+list and import locks). Disabling the module deletes the Webmecanik credentials and the webhook secret:
+enter them again in the setup page (and copy the new webhook secret into Webmecanik if you generate one).
 
 ## License
 
