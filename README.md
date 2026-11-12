@@ -93,7 +93,7 @@ Use a dedicated API account with the least privileges required.
 |---------|-------------|
 | Instance URL | e.g. `https://mycompany.webmecanik.com` – **https only** |
 | Authentication | OAuth2 client credentials or HTTP basic |
-| Minimum points | contacts below this score are ignored (default 40) |
+| Minimum points | contacts below this score are ignored (default 40, `0` = every contact, see [Import scope](#import-scope)) |
 | Segment alias | optional, restricts the import to one segment |
 | Custom field aliases | message, interests, industry (optional) |
 | Processing delay | days before a lead is flagged late and reminders are sent (0 = off) |
@@ -105,6 +105,28 @@ Use a dedicated API account with the least privileges required.
 | Webhook | optional real-time import, secret of at least 32 characters |
 
 Click **Test connection**, then **Synchronise now** (use a window of e.g. 30 days for the initial import).
+
+#### Import scope
+
+The *Minimum points* and *Segment alias* settings decide which Webmecanik contacts are imported.
+Two typical set-ups:
+
+| Use | Minimum points | Segment alias |
+|-----|----------------|---------------|
+| Sales-ready leads only (default) | your lead scoring threshold, e.g. 40 | optional |
+| Every contact modified in Webmecanik | `0` | empty, or a segment to narrow the scope |
+
+With `0`, every contact modified in Webmecanik since the last synchronisation is imported, whatever
+its score. Keep in mind that:
+
+- the flow goes from Webmecanik to Dolibarr: each contact becomes a **marketing lead** to process,
+  not directly a third party or a contact; Dolibarr only sends back the lead status, as a tag;
+- contacts without a valid email (anonymous visitors) and contacts with a negative score are
+  never imported;
+- an existing lead is not overwritten: only its points and modification date are refreshed;
+- each run covers at most the *Maximum synchronisation window* (30 days by default, up to 365) and
+  20,000 contacts. To import an older or larger base, raise the window and run the initial import
+  in several passes, or narrow it with a segment.
 
 ### 3. Enable the scheduled jobs
 

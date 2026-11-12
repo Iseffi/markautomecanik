@@ -63,8 +63,9 @@ Activez ensuite **Webmecanik marketing automation** dans *Accueil > Configuratio
    votre administrateur Webmecanik et, à défaut, préférez l'authentification basique avec un utilisateur
    dédié aux droits restreints.
 2. **Dans Dolibarr** : renseignez l'URL de l'instance (https uniquement), le mode d'authentification et
-   les identifiants, le seuil de points, puis cliquez sur **Tester la connexion** et
-   **Synchroniser maintenant** (fenêtre de 30 jours par exemple pour l'import initial).
+   les identifiants, le seuil de points (voir [Périmètre de l'import](#périmètre-de-limport)),
+   puis cliquez sur **Tester la connexion** et **Synchroniser maintenant** (fenêtre de 30 jours par
+   exemple pour l'import initial).
 3. **Tâches planifiées** : activez les tâches « Webmecanik - … » (synchronisation horaire, relances et
    purge RGPD quotidiennes). Elles sont créées désactivées.
 4. **Webhook (optionnel)** : cochez *Générer un nouveau secret* (ou collez un secret d'au moins
@@ -72,6 +73,28 @@ Activez ensuite **Webmecanik marketing automation** dans *Accueil > Configuratio
    Webmecanik (*Paramètres > Webhooks*), événements « Contact mis à jour » et « Points du contact modifiés ».
 5. **Droits** : lecture de ses leads / de tous les leads, qualification, suppression et anonymisation,
    lancement manuel de la synchronisation.
+
+## Périmètre de l'import
+
+Les réglages *Points minimum* et *Alias du segment* déterminent les contacts Webmecanik importés.
+Deux configurations types :
+
+| Usage | Points minimum | Alias du segment |
+|-------|----------------|------------------|
+| Uniquement les leads prêts pour les ventes (par défaut) | votre seuil de lead scoring, par ex. 40 | optionnel |
+| Tous les contacts modifiés dans Webmecanik | `0` | vide, ou un segment pour restreindre |
+
+Avec `0`, tous les contacts modifiés dans Webmecanik depuis la dernière synchronisation sont importés,
+quel que soit leur score. À savoir :
+
+- le flux va de Webmecanik vers Dolibarr : chaque contact devient un **lead marketing** à traiter,
+  pas directement un tiers ou un contact ; Dolibarr ne renvoie que le statut du lead, sous forme de tag ;
+- les contacts sans email valide (visiteurs anonymes) et ceux dont le score est négatif ne sont
+  jamais importés ;
+- un lead existant n'est pas écrasé : seuls ses points et sa date de modification sont mis à jour ;
+- chaque synchronisation couvre au plus la *fenêtre maximale de synchronisation* (30 jours par défaut,
+  jusqu'à 365) et 20 000 contacts. Pour importer une base plus ancienne ou plus volumineuse, augmentez
+  la fenêtre et faites l'import initial en plusieurs passes, ou restreignez-le avec un segment.
 
 ## Sécurité
 
