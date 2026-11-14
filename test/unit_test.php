@@ -27,6 +27,7 @@ class CommonObject {} class DoliDB {}
 require $M.'/class/webmecanikclient.class.php';
 eval('?>'.preg_replace('/^.*?class MarkAutoMecanikLead/s', '<?php class MarkAutoMecanikLead', file_get_contents($M.'/class/markautomecaniklead.class.php')));
 eval('?>'.preg_replace('/^.*?class MarkAutoMecanikSync/s', '<?php class MarkAutoMecanikSync', file_get_contents($M.'/class/markautomecaniksync.class.php')));
+eval('?>'.preg_replace('/^.*?class MarkAutoMecanikPush/s', '<?php class MarkAutoMecanikPush', file_get_contents($M.'/class/markautomecanikpush.class.php')));
 $fail = 0;
 function check($label, $got, $exp) { global $fail; $ok = ($got === $exp); if (!$ok) $fail++; echo ($ok ? 'OK   ' : 'FAIL ').$label.($ok ? '' : ' got='.var_export($got, true).' exp='.var_export($exp, true))."\n"; }
 $n = 'MarkAutoMecanikWebmecanikClient::normalizeBaseUrl';
@@ -93,6 +94,34 @@ $contact2 = array('id' => 1, 'fields' => array('all' => array('email' => 'a@b.c'
 $m2 = MarkAutoMecanikSync::mapContact($contact2);
 check('map all group', $m2['lastname'], 'Doe');
 check('map no message alias', MarkAutoMecanikSync::mapContact(array('fields' => array('all' => array('' => 'x'))))['interests'], '');
+check('map activity from lastActive', MarkAutoMecanikSync::mapContact(array('lastActive' => '2026-01-01T00:00:00+00:00', 'dateModified' => '2026-05-01T00:00:00+00:00'))['activity_ts'], strtotime('2026-01-01T00:00:00+00:00'));
+check('map activity fallback', MarkAutoMecanikSync::mapContact(array('dateModified' => '2026-05-01T00:00:00+00:00'))['activity_ts'], strtotime('2026-05-01T00:00:00+00:00'));
+// Dolibarr -> Webmecanik
+check('parseIds', MarkAutoMecanikPush::parseIds('3, 5,,x,-2,3'), array(3, 5));
+check('retry delay 1', MarkAutoMecanikPush::getRetryDelay(1), 300);
+check('retry delay 3', MarkAutoMecanikPush::getRetryDelay(3), 1200);
+check('retry delay capped', MarkAutoMecanikPush::getRetryDelay(20), 86400);
+check('payload drops empty', MarkAutoMecanikPush::cleanPayload(array('a' => '', 'b' => null, 'c' => " x\ny ")), array('c' => 'x y'));
+$push = new MarkAutoMecanikPush(new DoliDB());
+$c = new stdClass();
+$c->civility_code = 'MME'; $c->civility_id = 'MME'; $c->firstname = 'Jane'; $c->lastname = 'Doe'; $c->email = ' Jane@Example.com ';
+$c->poste = 'CEO'; $c->phone_pro = '01 02'; $c->phone_mobile = ''; $c->fax = null; $c->address = "1 rue A\nBât B"; $c->zip = '75001';
+$c->town = 'Paris'; $c->state_id = 0; $c->country_id = 0; $c->default_lang = 'fr_FR';
+$c->socialnetworks = array('linkedin' => 'janedoe', 'mastodon' => 'x');
+$p = $push->buildContactPayload($c);
+check('contact payload title', $p['title'], 'Mrs');
+check('contact payload email', $p['email'], 'jane@example.com');
+check('contact payload one line', $p['address1'], '1 rue A Bât B');
+check('contact payload no empty', isset($p['mobile']) || isset($p['fax']) || isset($p['country']), false);
+check('contact payload social', $p['linkedin'], 'janedoe');
+check('contact payload unknown social', isset($p['mastodon']), false);
+$s = new stdClass();
+$s->name = 'ACME'; $s->email = '"bad"@x.com'; $s->phone = '01'; $s->fax = ''; $s->address = ''; $s->zip = ''; $s->town = 'Lyon';
+$s->state_id = 0; $s->country_id = 0; $s->url = 'www.acme.example';
+$p = $push->buildCompanyPayload($s);
+check('company payload name', $p['companyname'], 'ACME');
+check('company payload unsafe email dropped', isset($p['companyemail']), false);
+check('company payload website scheme', $p['companywebsite'], 'https://www.acme.example');
 // webhook signature as computed by Mautic
 $raw = '{"mautic.lead_post_save_update":[{"contact":{"id":12}}]}';
 $sig = base64_encode(hash_hmac('sha256', $raw, 'secret', true));

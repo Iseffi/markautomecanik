@@ -30,6 +30,10 @@ pour boucler la boucle marketing / ventes.
   des leads non convertis après la durée de conservation.
 - **Widget** de tableau de bord, **statistiques** (par mois, statut, commercial, taux de conversion)
   et **historique des synchronisations**.
+- **Dolibarr → Webmecanik** : les contacts Dolibarr (éventuellement limités à certaines catégories) et
+  leur tiers sont créés et mis à jour dans Webmecanik via une file d'attente envoyée par une tâche
+  planifiée, avec relances ; les contacts désinscrits dans Dolibarr sont marqués *ne pas contacter* ;
+  suppression optionnelle. Remplace la synchronisation des contacts du module DoliMautic et reprend ses liaisons.
 - **API REST** (`/api/index.php/markautomecanik/leads`) en lecture et création.
 - Compatible multi-société, traductions française et anglaise.
 
@@ -70,7 +74,18 @@ Activez ensuite **Webmecanik marketing automation** dans *Accueil > Configuratio
 4. **Webhook (optionnel)** : cochez *Générer un nouveau secret* (ou collez un secret d'au moins
    32 caractères), activez le webhook, puis déclarez l'URL et le secret affichés dans
    Webmecanik (*Paramètres > Webhooks*), événements « Contact mis à jour » et « Points du contact modifiés ».
-5. **Droits** : lecture de ses leads / de tous les leads, qualification, suppression et anonymisation,
+5. **Envoi des contacts Dolibarr (optionnel)** : onglet *Dolibarr → Webmecanik* de la configuration.
+   Choisissez les contacts à envoyer (catégories et exclusions ; vide = tous les contacts ayant un email),
+   activez l'envoi et la tâche planifiée « Webmecanik - send Dolibarr contacts and third parties », puis
+   cliquez sur **Mettre en file les contacts absents de Webmecanik** pour le chargement initial. Une valeur
+   vide dans Dolibarr n'efface jamais une donnée Webmecanik. L'utilisateur API doit avoir les droits
+   *Contacts* et *Sociétés* en lecture, création et modification.
+   **Depuis DoliMautic** : désactivez DoliMautic (les deux modules ne peuvent pas être actifs ensemble),
+   puis activez ce module : la connexion, le périmètre et les exclusions sont repris une fois, et les
+   identifiants Webmecanik déjà enregistrés par DoliMautic (extrafields `mautic_contact_id` et
+   `mautic_tier_id`) sont réutilisés, sans doublon. Le client OAuth2 doit autoriser le mode *client
+   credentials*. Les segments, tags, tags commerciaux et le mapping de champs de DoliMautic ne sont pas repris.
+6. **Droits** : lecture de ses leads / de tous les leads, qualification, suppression et anonymisation,
    lancement manuel de la synchronisation.
 
 ## Sécurité
@@ -91,7 +106,7 @@ module.
 ## Mise à jour
 
 Après remplacement des fichiers, désactivez puis réactivez le module pour créer les nouvelles tables
-(1.1.0 : liste d'exclusion RGPD et verrous d'import). La désactivation supprime les identifiants
+(1.1.0 : liste d'exclusion RGPD et verrous d'import ; 1.2.0 : file d'envoi et extrafields des identifiants Webmecanik). La désactivation supprime les identifiants
 Webmecanik et le secret du webhook : saisissez-les à nouveau dans la configuration.
 
 ## Licence

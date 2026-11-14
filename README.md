@@ -36,6 +36,10 @@ Webmecanik as a tag to close the loop between marketing and sales.
   unconverted leads after a retention period.
 - **Dashboard widget**, **statistics** (per month, status and sales representative, conversion rate)
   and **synchronisation history**.
+- **Dolibarr → Webmecanik**: Dolibarr contacts (optionally restricted to some categories) and their
+  third party are created and updated in Webmecanik through a queue sent by a scheduled job, with
+  retries; contacts unsubscribed in Dolibarr are flagged *do not contact*; optional deletion.
+  Replaces the contact synchronisation of the DoliMautic module and keeps its links.
 - **REST API** (`/api/index.php/markautomecanik/leads`) to read and create leads.
 - Multi-company aware, English and French translations.
 
@@ -119,7 +123,27 @@ see the [Dolibarr documentation](https://wiki.dolibarr.org/index.php/Module_Cron
 
 All jobs are created **disabled**: enable them once the connection works.
 
-### 4. Optional: real-time webhook
+### 4. Optional: send Dolibarr contacts to Webmecanik
+
+Tab **Dolibarr → Webmecanik** of the module setup:
+
+1. choose the contacts to send (categories and exclusions; empty = all contacts with an email),
+   optionally the deletion in Webmecanik of contacts deleted in Dolibarr, and enable the push;
+2. enable the scheduled job *Webmecanik - send Dolibarr contacts and third parties* (every 5 minutes);
+3. for the initial load, click **Queue the contacts not yet in Webmecanik**.
+
+Contacts are queued when they are created or modified (or added to / removed from a category); the
+third party is created or updated as a Webmecanik company and linked to the contact. Empty Dolibarr
+values are never sent, so data collected by Webmecanik forms are not erased. The API user needs the
+*Contacts* and *Companies* view / create / edit permissions (and *delete* for the deletion option).
+
+**Coming from DoliMautic**: disable DoliMautic first (both modules cannot be enabled together), then
+enable this module. Its connection settings, scope and exclusions are imported once, and the
+Webmecanik ids already stored by DoliMautic (`mautic_contact_id`, `mautic_tier_id` extrafields) are
+reused, so no duplicate is created. The OAuth2 client of DoliMautic must allow the *client
+credentials* grant. Segments, tags, commercial tags and field mapping of DoliMautic are not taken over.
+
+### 5. Optional: real-time webhook
 
 1. In the module setup, check *Generate a new secret* (or paste a secret of at least 32 characters)
    and enable the webhook; copy the displayed secret and URL.
@@ -129,7 +153,7 @@ All jobs are created **disabled**: enable them once the connection works.
 The webhook only carries contact ids: contact data are always read back from the API.
 The scheduled job remains the reference and catches up anything the webhook missed.
 
-### 5. Permissions
+### 6. Permissions
 
 | Permission | Typical profile |
 |------------|-----------------|
@@ -205,13 +229,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Development files (`.github/`, `build/`,
 | `llx_markautomecanik_synclog` | synchronisation history (no personal data) |
 | `llx_markautomecanik_optout` | GDPR opt-out list (salted hashes only) |
 | `llx_markautomecanik_lock` | short-lived import locks |
+| `llx_markautomecanik_pushqueue` | queue of contacts / third parties to send to Webmecanik (ids only) |
+| extrafields `mautic_contact_id`, `mautic_tier_id` | Webmecanik ids of contacts and third parties (shared with DoliMautic) |
 
 Tables are kept when the module is disabled.
 
 ## Upgrading
 
 After replacing the files, disable and re-enable the module to create the new tables (1.1.0: opt-out
-list and import locks). Disabling the module deletes the Webmecanik credentials and the webhook secret:
+list and import locks; 1.2.0: push queue and Webmecanik id extrafields). Disabling the module deletes the Webmecanik credentials and the webhook secret:
 enter them again in the setup page (and copy the new webhook secret into Webmecanik if you generate one).
 
 ## License
