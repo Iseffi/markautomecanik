@@ -4,6 +4,32 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-11-14
+
+### Added
+- Synchronisation Dolibarr → Webmecanik of contacts and their third parties, taken over from the
+  DoliMautic module: contacts in scope (categories and exclusions, or all contacts with an email) are
+  created or updated in Webmecanik, their third party as a company linked to the contact.
+  - Queue filled by the triggers (contact created / modified / deleted, third party modified, category
+    linked / unlinked) and sent by the new scheduled job *Webmecanik - send Dolibarr contacts and third
+    parties*, with retries and exponential backoff; saving a record never waits for Webmecanik.
+  - New setup tab *Dolibarr → Webmecanik*: scope, deletion option, queue status, initial load of the
+    contacts not yet in Webmecanik, immediate sending, retry of failed items.
+  - Empty Dolibarr values are never sent (no data erased in Webmecanik); contacts unsubscribed in
+    Dolibarr are flagged *do not contact*; optional deletion in Webmecanik of deleted contacts.
+- DoliMautic migration: the extrafields `mautic_contact_id` and `mautic_tier_id` are reused (existing
+  links kept, no duplicate), and the connection settings, scope, exclusions and deletion option of
+  DoliMautic are imported once. Both modules cannot be enabled together.
+
+### Changed
+- The re-engagement of a closed lead is based on the last activity of the contact (`lastActive`)
+  instead of its modification date, which is also changed by the Dolibarr → Webmecanik push.
+
+### Upgrade notes
+- Disable and re-enable the module to create the queue table and the extrafields.
+- Not taken over from DoliMautic: segments and tags as categories, commercial tags, field mapping,
+  Mautic → Dolibarr contact synchronisation (this module imports marketing leads instead).
+
 ## [1.1.0] - 2026-11-11
 
 Security hardening following the code review of version 1.0.1 by Webmecanik (issues #2, #3 and #4).

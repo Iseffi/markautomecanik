@@ -39,6 +39,11 @@ function markautomecanikAdminPrepareHead()
 	$head[$h][2] = 'settings';
 	$h++;
 
+	$head[$h][0] = dol_buildpath('/markautomecanik/admin/push.php', 1);
+	$head[$h][1] = $langs->trans('PushTab');
+	$head[$h][2] = 'push';
+	$h++;
+
 	$head[$h][0] = dol_buildpath('/markautomecanik/admin/synclog.php', 1);
 	$head[$h][1] = $langs->trans('SyncHistory');
 	$head[$h][2] = 'synclog';

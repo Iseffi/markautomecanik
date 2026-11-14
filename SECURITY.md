@@ -63,6 +63,21 @@ otherwise.
 - A short-lived lock per contact prevents two concurrent imports (webhook and scheduled job) from
   creating two leads; API calls made by the webhook use short timeouts.
 
+### Outgoing synchronisation of Dolibarr contacts
+
+- Triggers only queue object ids: no API call while a user saves a record, and a Webmecanik failure
+  never prevents saving it. The queue (ids, action, attempts, technical error message) contains no
+  personal data; processed items are purged after 30 days.
+- Only contacts with a valid email and in the configured scope are sent; values are normalised
+  (single line, bounded length) and empty values are never sent.
+- Webmecanik ids are written in SQL, not through an object update, so that no trigger loop occurs.
+- Contacts unsubscribed from mass emailings in Dolibarr are flagged *do not contact* by email in
+  Webmecanik; an unsubscription made in Webmecanik is never cancelled from Dolibarr.
+- Only the links contact ↔ company created from Dolibarr are removed when the third party changes.
+- Deleting contacts in Webmecanik is disabled by default.
+- The re-engagement of a closed lead is based on the last marketing activity of the contact
+  (`lastActive`), not on its modification date, which changes when Dolibarr updates it.
+
 ### Input normalisation
 
 All data entering a lead (form, REST API, Webmecanik import, webhook) goes through the same rules:

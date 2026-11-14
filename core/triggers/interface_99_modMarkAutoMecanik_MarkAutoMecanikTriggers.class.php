@@ -18,7 +18,8 @@
 /**
  * \file       markautomecanik/core/triggers/interface_99_modMarkAutoMecanik_MarkAutoMecanikTriggers.class.php
  * \ingroup    markautomecanik
- * \brief      Keeps marketing leads consistent when linked Dolibarr objects are deleted
+ * \brief      Keeps marketing leads consistent when linked Dolibarr objects are deleted, and
+ *             queues the contacts and third parties to send to Webmecanik
  */
 
 require_once DOL_DOCUMENT_ROOT.'/core/triggers/dolibarrtriggers.class.php';
@@ -38,8 +39,8 @@ class InterfaceMarkAutoMecanikTriggers extends DolibarrTriggers
 		$this->db = $db;
 		$this->name = preg_replace('/^Interface/i', '', get_class($this));
 		$this->family = 'crm';
-		$this->description = 'MarkAutoMecanik triggers: unlink marketing leads from deleted thirdparties, contacts and projects';
-		$this->version = '1.0.0';
+		$this->description = 'MarkAutoMecanik triggers: unlink marketing leads from deleted thirdparties, contacts and projects; queue contacts and thirdparties to send to Webmecanik';
+		$this->version = '1.2.0';
 		$this->picto = 'fa-bullhorn';
 	}
 
@@ -57,6 +58,12 @@ class InterfaceMarkAutoMecanikTriggers extends DolibarrTriggers
 	{
 		if (!isModEnabled('markautomecanik')) {
 			return 0;
+		}
+
+		// Dolibarr -> Webmecanik: the objects are only queued here. A failure must never prevent
+		// the user from saving the record, so the push never makes the trigger fail.
+		if (getDolGlobalInt('MARKAUTOMECANIK_PUSH_ENABLED')) {
+			$this->queuePush($action, $object);
 		}
 
 		$columns = array(
@@ -85,5 +92,53 @@ class InterfaceMarkAutoMecanikTriggers extends DolibarrTriggers
 			return -1;
 		}
 		return 1;
+	}
+
+	/**
+	 * Queue the contacts and third parties to send to Webmecanik
+	 *
+	 * @param string $action Event action code
+	 * @param object $object Object
+	 * @return void
+	 */
+	protected function queuePush($action, $object)
+	{
+		require_once dirname(dirname(__DIR__)).'/class/markautomecanikpush.class.php';
+
+		$id = empty($object->id) ? 0 : (int) $object->id;
+		switch ($action) {
+			case 'CONTACT_CREATE':
+			case 'CONTACT_MODIFY':
+				MarkAutoMecanikPush::enqueue($this->db, MarkAutoMecanikPush::TYPE_CONTACT, $id);
+				break;
+
+			case 'CONTACT_DELETE':
+				// Called before the deletion: the Webmecanik id is still readable
+				if (getDolGlobalInt('MARKAUTOMECANIK_PUSH_DELETE')) {
+					$push = new MarkAutoMecanikPush($this->db);
+					$wmId = $push->getLinkedId(MarkAutoMecanikPush::TYPE_CONTACT, $id);
+					if ($wmId > 0) {
+						MarkAutoMecanikPush::enqueue($this->db, MarkAutoMecanikPush::TYPE_CONTACT, $id, MarkAutoMecanikPush::ACTION_DELETE, $wmId);
+					}
+				}
+				break;
+
+			case 'COMPANY_MODIFY':
+				// Only third parties already in Webmecanik are updated; the others are created with their contacts
+				$push = new MarkAutoMecanikPush($this->db);
+				if ($push->getLinkedId(MarkAutoMecanikPush::TYPE_THIRDPARTY, $id) > 0) {
+					MarkAutoMecanikPush::enqueue($this->db, MarkAutoMecanikPush::TYPE_THIRDPARTY, $id);
+				}
+				break;
+
+			case 'CATEGORY_LINK':
+			case 'CATEGORY_UNLINK':
+				// A contact entering or leaving a category may enter or leave the push scope
+				$linked = (isset($object->context['linkto']) && is_object($object->context['linkto'])) ? $object->context['linkto'] : null;
+				if ($linked !== null && isset($linked->element) && $linked->element === 'contact' && !empty($linked->id)) {
+					MarkAutoMecanikPush::enqueue($this->db, MarkAutoMecanikPush::TYPE_CONTACT, (int) $linked->id);
+				}
+				break;
+		}
 	}
 }

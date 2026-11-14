@@ -91,16 +91,16 @@ class MarkAutoMecanikSync
 	// -------------------------------------------------------------------------------------------
 
 	/**
-	 * Take the synchronisation lock of the current entity
+	 * Take a lock of the current entity (synchronisation or push queue)
 	 *
+	 * @param string $name Name of the constant used as lock
 	 * @return bool
 	 */
-	protected function acquireLock()
+	public function acquireLock($name = 'MARKAUTOMECANIK_SYNC_LOCK')
 	{
 		global $conf;
 
 		$now = dol_now();
-		$name = 'MARKAUTOMECANIK_SYNC_LOCK';
 		// Atomic update: only succeeds if there is no lock or if it is stale
 		$sql = 'UPDATE '.MAIN_DB_PREFIX."const SET value = '".$this->db->escape((string) $now)."'";
 		$sql .= " WHERE name = '".$this->db->escape($name)."' AND entity = ".((int) $conf->entity);
@@ -119,14 +119,15 @@ class MarkAutoMecanikSync
 	}
 
 	/**
-	 * Release the synchronisation lock
+	 * Release a lock taken with acquireLock()
 	 *
+	 * @param string $name Name of the constant used as lock
 	 * @return void
 	 */
-	protected function releaseLock()
+	public function releaseLock($name = 'MARKAUTOMECANIK_SYNC_LOCK')
 	{
 		global $conf;
-		dolibarr_set_const($this->db, 'MARKAUTOMECANIK_SYNC_LOCK', '0', 'chaine', 0, '', $conf->entity);
+		dolibarr_set_const($this->db, $name, '0', 'chaine', 0, '', $conf->entity);
 	}
 
 	/**
@@ -182,14 +183,14 @@ class MarkAutoMecanikSync
 	/**
 	 * Write a line in the synchronisation history
 	 *
-	 * @param string $trigger 'cron', 'manual' or 'webhook'
+	 * @param string $trigger 'cron', 'manual', 'webhook' or 'push'
 	 * @param int    $start   Start timestamp
 	 * @param int    $status  1=OK, -1=KO
 	 * @param string $message Message (must not contain personal data)
 	 * @param User   $user    User
 	 * @return void
 	 */
-	protected function writeLog($trigger, $start, $status, $message, $user)
+	public function writeLog($trigger, $start, $status, $message, $user)
 	{
 		global $conf;
 
@@ -288,6 +289,9 @@ class MarkAutoMecanikSync
 			'wm_points'        => (int) (isset($contact['points']) ? $contact['points'] : 0),
 			'wm_date_added'    => $toTs(isset($contact['dateAdded']) ? $contact['dateAdded'] : ''),
 			'wm_date_modified' => $toTs(isset($contact['dateModified']) ? $contact['dateModified'] : ''),
+			// Marketing activity of the contact. dateModified also changes when Dolibarr updates the contact
+			// (push of Dolibarr contacts), which must not be mistaken for a re-engagement.
+			'activity_ts'      => $toTs(!empty($contact['lastActive']) ? $contact['lastActive'] : (isset($contact['dateModified']) ? $contact['dateModified'] : '')),
 			'firstname'        => $get('firstname'),
 			'lastname'         => $get('lastname'),
 			'email'            => strtolower(trim($get('email'))),
@@ -365,7 +369,8 @@ class MarkAutoMecanikSync
 	 */
 	protected function importMappedContact($lead, $data, $ref, $user)
 	{
-		$match = $lead->findForSync($data['email'], $data['wm_contact_id'], $data['wm_date_modified']);
+		$match = $lead->findForSync($data['email'], $data['wm_contact_id'], $data['activity_ts']);
+		unset($data['activity_ts']);
 
 		if ($match['action'] === 'error') {
 			$this->stats['errors']++;

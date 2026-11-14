@@ -284,7 +284,7 @@ class MarkAutoMecanikWebmecanikClient
 	/**
 	 * Low level HTTPS call
 	 *
-	 * @param string      $method  GET, POST, PATCH
+	 * @param string      $method  GET, POST, PATCH, DELETE
 	 * @param string      $url     Absolute URL (must start with the configured base URL)
 	 * @param array       $headers HTTP headers
 	 * @param string|null $body    Raw body
@@ -442,7 +442,7 @@ class MarkAutoMecanikWebmecanikClient
 	/**
 	 * Call the REST API
 	 *
-	 * @param string     $method GET, POST or PATCH
+	 * @param string     $method GET, POST, PATCH or DELETE
 	 * @param string     $path   Path starting with /api/
 	 * @param array      $query  Query string parameters
 	 * @param array|null $data   JSON body
@@ -452,7 +452,7 @@ class MarkAutoMecanikWebmecanikClient
 	{
 		$this->error = '';
 		$method = strtoupper($method);
-		if (!in_array($method, array('GET', 'POST', 'PATCH'), true)) {
+		if (!in_array($method, array('GET', 'POST', 'PATCH', 'DELETE'), true)) {
 			$this->error = 'Unsupported HTTP method';
 			return null;
 		}

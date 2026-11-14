@@ -50,10 +50,10 @@ class modMarkAutoMecanik extends DolibarrModules
 		$this->module_position = '91';
 		$this->name = preg_replace('/^mod/i', '', get_class($this));
 		$this->description = 'Webmecanik marketing automation: import qualified contacts as marketing leads';
-		$this->descriptionlong = 'Imports qualified contacts (points threshold, optional segment) from Webmecanik Automation as marketing leads, with qualification workflow, sales assignment, reminders and GDPR retention.';
+		$this->descriptionlong = 'Imports qualified contacts (points threshold, optional segment) from Webmecanik Automation as marketing leads, with qualification workflow, sales assignment, reminders and GDPR retention. Sends Dolibarr contacts and their third parties to Webmecanik (replaces the DoliMautic module, whose links are kept).';
 		$this->editor_name = 'Iseffi';
 		$this->editor_url = 'https://github.com/iseffi/markautomecanik';
-		$this->version = '1.1.0';
+		$this->version = '1.2.0';
 		$this->url_last_version = '';
 		$this->const_name = 'MAIN_MODULE_'.strtoupper($this->name);
 		$this->picto = 'fa-bullhorn';
@@ -80,7 +80,8 @@ class modMarkAutoMecanik extends DolibarrModules
 		$this->hidden = false;
 		$this->depends = array('modSociete');
 		$this->requiredby = array();
-		$this->conflictwith = array();
+		// DoliMautic sends the same contacts to Webmecanik: both modules enabled would send them twice
+		$this->conflictwith = array('modDoliMautic');
 		$this->langfiles = array('markautomecanik@markautomecanik');
 		$this->phpmin = array(7, 4);
 		$this->need_dolibarr_version = array(19, 0);
@@ -148,6 +149,20 @@ class modMarkAutoMecanik extends DolibarrModules
 				'comment' => 'GDPR: anonymise unconverted leads older than the retention period',
 				'frequency' => 1,
 				'unitfrequency' => 86400,
+				'status' => 0,
+				'test' => 'isModEnabled("markautomecanik")',
+				'priority' => 50,
+			),
+			3 => array(
+				'label' => 'Webmecanik - send Dolibarr contacts and third parties',
+				'jobtype' => 'method',
+				'class' => '/markautomecanik/class/markautomecanikpush.class.php',
+				'objectname' => 'MarkAutoMecanikPush',
+				'method' => 'cronPush',
+				'parameters' => '',
+				'comment' => 'Send the queue of Dolibarr contacts and third parties created or modified to Webmecanik Automation',
+				'frequency' => 5,
+				'unitfrequency' => 60,
 				'status' => 0,
 				'test' => 'isModEnabled("markautomecanik")',
 				'priority' => 50,
@@ -299,12 +314,104 @@ class modMarkAutoMecanik extends DolibarrModules
 		// (_remove() and not remove(): the secrets must not be deleted at activation)
 		$this->_remove(array(), $options);
 
+		if ($this->initExtraFields() < 0) {
+			return -1;
+		}
+		$this->importDoliMauticSettings();
+
 		$sql = array(
 			// 1.1.0: leads imported from Webmecanik have no author (visibility through "created by me")
 			"UPDATE ".MAIN_DB_PREFIX."markautomecanik_lead SET fk_user_creat = NULL WHERE origin = 'webmecanik' AND fk_user_creat IS NOT NULL",
 		);
 
 		return $this->_init($sql, $options);
+	}
+
+	/**
+	 * Create the extrafields storing the Webmecanik ids of contacts and third parties.
+	 * They have the names used by the DoliMautic module: when they already exist (DoliMautic
+	 * installed before), they are kept with their values and enabled for this module too.
+	 *
+	 * @return int <0 if KO, >0 if OK
+	 */
+	protected function initExtraFields()
+	{
+		require_once DOL_DOCUMENT_ROOT.'/core/class/extrafields.class.php';
+		$extrafields = new ExtraFields($this->db);
+		$fields = array(
+			array('mautic_contact_id', 'WebmecanikContactId', 'contact', 'socpeople'),
+			array('mautic_tier_id', 'WebmecanikCompanyId', 'thirdparty', 'societe'),
+		);
+		foreach ($fields as $field) {
+			list($name, $label, $elementtype, $storedtype) = $field;
+			$sql = 'SELECT rowid, enabled FROM '.MAIN_DB_PREFIX."extrafields WHERE name = '".$this->db->escape($name)."' AND elementtype = '".$this->db->escape($storedtype)."'";
+			$resql = $this->db->query($sql);
+			if (!$resql) {
+				$this->error = $this->db->lasterror();
+				return -1;
+			}
+			$existing = $this->db->fetch_object($resql);
+			$this->db->free($resql);
+			if ($existing) {
+				$enabled = (string) $existing->enabled;
+				if ($enabled !== '' && $enabled !== '1' && strpos($enabled, 'markautomecanik') === false) {
+					$sql = 'UPDATE '.MAIN_DB_PREFIX."extrafields SET enabled = '".$this->db->escape('('.$enabled.') || isModEnabled("markautomecanik")')."'";
+					$sql .= ' WHERE rowid = '.((int) $existing->rowid);
+					$this->db->query($sql);
+				}
+				continue;
+			}
+			// Integer, visible on the card only (not editable), not shown in lists
+			$result = $extrafields->addExtraField($name, $label, 'int', 900, 10, $elementtype, 0, 0, '', '', 0, '', 5, '', '', '', 'markautomecanik@markautomecanik', 'isModEnabled("markautomecanik")');
+			if ($result < 0) {
+				$this->error = $extrafields->error;
+				return -1;
+			}
+		}
+		return 1;
+	}
+
+	/**
+	 * First activation on an instance where DoliMautic was used: reuse its connection settings and
+	 * its synchronisation scope (done once; the push stays disabled until the administrator enables it)
+	 *
+	 * @return void
+	 */
+	protected function importDoliMauticSettings()
+	{
+		global $conf;
+		require_once DOL_DOCUMENT_ROOT.'/core/lib/admin.lib.php';
+		require_once dirname(dirname(__DIR__)).'/class/webmecanikclient.class.php';
+
+		if (getDolGlobalInt('MARKAUTOMECANIK_DOLIMAUTIC_IMPORTED') || getDolGlobalString('MAUTIC_URL') === '') {
+			return;
+		}
+		$entity = $conf->entity;
+		if (getDolGlobalString('MARKAUTOMECANIK_WM_URL') === '') {
+			$url = MarkAutoMecanikWebmecanikClient::normalizeBaseUrl(getDolGlobalString('MAUTIC_URL'));
+			if ($url !== '') {
+				dolibarr_set_const($this->db, 'MARKAUTOMECANIK_WM_URL', $url, 'chaine', 0, '', $entity);
+			}
+		}
+		// Same OAuth2 client: the "client credentials" grant must be allowed for it in Webmecanik
+		if (getDolGlobalString('MARKAUTOMECANIK_WM_CLIENT_ID') === '' && getDolGlobalString('MAUTIC_PUBLIC_KEY') !== '') {
+			dolibarr_set_const($this->db, 'MARKAUTOMECANIK_WM_AUTH', 'oauth2', 'chaine', 0, '', $entity);
+			dolibarr_set_const($this->db, 'MARKAUTOMECANIK_WM_CLIENT_ID', dol_substr(getDolGlobalString('MAUTIC_PUBLIC_KEY'), 0, 255), 'chaine', 0, '', $entity);
+			if (getDolGlobalString('MARKAUTOMECANIK_WM_CLIENT_SECRET') === '' && getDolGlobalString('MAUTIC_SECRET_KEY') !== '') {
+				dolibarr_set_const($this->db, 'MARKAUTOMECANIK_WM_CLIENT_SECRET', MarkAutoMecanikWebmecanikClient::encryptSecret(getDolGlobalString('MAUTIC_SECRET_KEY')), 'chaine', 0, '', $entity);
+			}
+		}
+		// Scope: contacts of the DoliMautic segment / tag categories, or all contacts
+		if (!getDolGlobalInt('DOLIMAUTIC_SYNC_WITHOUT_TAGS_SEGMENTS')) {
+			$categories = array_filter(array(getDolGlobalInt('DOLIMAUTIC_SEGMENT_CONTACTS'), getDolGlobalInt('DOLIMAUTIC_TAG_CONTACTS')));
+			dolibarr_set_const($this->db, 'MARKAUTOMECANIK_PUSH_CATEGORIES', implode(',', $categories), 'chaine', 0, '', $entity);
+		}
+		$excluded = getDolGlobalString('DOLIMAUTIC_TAGS_EXCLUDED').','.getDolGlobalString('DOLIMAUTIC_SEGMENTS_EXCLUDED');
+		$excluded = implode(',', array_unique(array_filter(array_map('intval', explode(',', $excluded)))));
+		dolibarr_set_const($this->db, 'MARKAUTOMECANIK_PUSH_EXCLUDED_CATEGORIES', $excluded, 'chaine', 0, '', $entity);
+		dolibarr_set_const($this->db, 'MARKAUTOMECANIK_PUSH_DELETE', getDolGlobalInt('DOLIMAUTIC_EXTEND_CONTACT_DELETE') ? 1 : 0, 'chaine', 0, '', $entity);
+		dolibarr_set_const($this->db, 'MARKAUTOMECANIK_DOLIMAUTIC_IMPORTED', 1, 'chaine', 0, '', $entity);
+		dol_syslog(__METHOD__.' DoliMautic settings imported', LOG_NOTICE);
 	}
 
 	/**
