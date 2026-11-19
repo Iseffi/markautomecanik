@@ -123,8 +123,10 @@ Two typical set-ups:
 With `0`, every contact modified in Webmecanik since the last synchronisation is imported, whatever
 its score. Keep in mind that:
 
-- the flow goes from Webmecanik to Dolibarr: each contact becomes a **marketing lead** to process,
-  not directly a third party or a contact; Dolibarr only sends back the lead status, as a tag;
+- this import goes from Webmecanik to Dolibarr: each contact becomes a **marketing lead** to process,
+  not directly a third party or a contact (the lead status can be sent back as a tag). Sending the
+  Dolibarr contacts and third parties to Webmecanik is a separate, optional flow, see
+  [Optional: send Dolibarr contacts to Webmecanik](#4-optional-send-dolibarr-contacts-to-webmecanik);
 - contacts without a valid email (anonymous visitors) and contacts with a negative score are
   never imported;
 - an existing lead is not overwritten: only its points and modification date are refreshed;
