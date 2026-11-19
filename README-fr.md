@@ -102,8 +102,10 @@ Deux configurations types :
 Avec `0`, tous les contacts modifiés dans Webmecanik depuis la dernière synchronisation sont importés,
 quel que soit leur score. À savoir :
 
-- le flux va de Webmecanik vers Dolibarr : chaque contact devient un **lead marketing** à traiter,
-  pas directement un tiers ou un contact ; Dolibarr ne renvoie que le statut du lead, sous forme de tag ;
+- cet import va de Webmecanik vers Dolibarr : chaque contact devient un **lead marketing** à traiter,
+  pas directement un tiers ou un contact (le statut du lead peut être renvoyé sous forme de tag).
+  L'envoi des contacts et tiers Dolibarr vers Webmecanik est un flux distinct et optionnel, voir
+  l'étape 5 de la [configuration](#configuration) ;
 - les contacts sans email valide (visiteurs anonymes) et ceux dont le score est négatif ne sont
   jamais importés ;
 - un lead existant n'est pas écrasé : seuls ses points et sa date de modification sont mis à jour ;
